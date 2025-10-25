@@ -17,6 +17,9 @@ public class Room {
     private boolean isActive;
     private int maxParticipants;
 
+    @Column(unique = true)
+    private String inviteCode; // Новое поле: код приглашения
+
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL)
     private Set<Participant> participants = new HashSet<>();
 
@@ -42,6 +45,9 @@ public class Room {
 
     public int getMaxParticipants() { return maxParticipants; }
     public void setMaxParticipants(int maxParticipants) { this.maxParticipants = maxParticipants; }
+
+    public String getInviteCode() { return inviteCode; }
+    public void setInviteCode(String inviteCode) { this.inviteCode = inviteCode; }
 
     public Set<Participant> getParticipants() { return participants; }
     public void setParticipants(Set<Participant> participants) { this.participants = participants; }

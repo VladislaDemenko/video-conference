@@ -39,6 +39,7 @@ public class RoomController {
             response.put("roomId", room.getId());
             response.put("roomName", room.getName());
             response.put("inviteLink", "http://localhost:8081/room/" + room.getId());
+            response.put("inviteCode", room.getInviteCode()); // Возвращаем код приглашения
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -55,6 +56,29 @@ public class RoomController {
         Map<String, Boolean> response = new HashMap<>();
         response.put("exists", exists);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/api/rooms/invite/{inviteCode}/exists")
+    @ResponseBody
+    public ResponseEntity<?> checkInviteCodeExists(@PathVariable String inviteCode) {
+        boolean exists = roomService.inviteCodeExists(inviteCode);
+        Map<String, Boolean> response = new HashMap<>();
+        response.put("exists", exists);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/api/rooms/invite/{inviteCode}")
+    @ResponseBody
+    public ResponseEntity<?> getRoomByInviteCode(@PathVariable String inviteCode) {
+        return roomService.getRoomByInviteCode(inviteCode)
+                .map(room -> {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("roomId", room.getId());
+                    response.put("roomName", room.getName());
+                    response.put("inviteCode", room.getInviteCode());
+                    return ResponseEntity.ok(response);
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/api/rooms/{roomId}")

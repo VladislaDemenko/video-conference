@@ -22,6 +22,7 @@ public class RoomService {
         room.setCreatedAt(LocalDateTime.now());
         room.setActive(true);
         room.setMaxParticipants(maxParticipants);
+        room.setInviteCode(generateInviteCode()); // Генерируем код приглашения
 
         return roomRepository.save(room);
     }
@@ -30,11 +31,24 @@ public class RoomService {
         return roomRepository.findByIdAndIsActiveTrue(roomId);
     }
 
+    public Optional<Room> getRoomByInviteCode(String inviteCode) {
+        return roomRepository.findByInviteCodeAndIsActiveTrue(inviteCode);
+    }
+
     public boolean roomExists(String roomId) {
         return roomRepository.existsByIdAndIsActiveTrue(roomId);
     }
 
+    public boolean inviteCodeExists(String inviteCode) {
+        return roomRepository.existsByInviteCodeAndIsActiveTrue(inviteCode);
+    }
+
     private String generateRoomId() {
         return UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private String generateInviteCode() {
+        // Генерируем 6-значный цифровой код
+        return String.format("%06d", (int) (Math.random() * 1000000));
     }
 }
