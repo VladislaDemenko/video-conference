@@ -38,8 +38,7 @@ public class RoomController {
             Map<String, Object> response = new HashMap<>();
             response.put("roomId", room.getId());
             response.put("roomName", room.getName());
-            response.put("inviteLink", "http://localhost:8081/room/" + room.getId());
-            response.put("inviteCode", room.getInviteCode()); // Возвращаем код приглашения
+            response.put("inviteCode", room.getInviteCode());
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {

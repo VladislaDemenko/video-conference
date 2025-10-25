@@ -1,6 +1,5 @@
 document.addEventListener('DOMContentLoaded', function() {
     const createRoomForm = document.getElementById('createRoomForm');
-    const joinRoomForm = document.getElementById('joinRoomForm');
     const joinByCodeForm = document.getElementById('joinByCodeForm');
     const errorMessage = document.getElementById('errorMessage');
 
@@ -14,6 +13,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
+            // Показываем индикатор загрузки
+            const submitBtn = createRoomForm.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = 'Создание...';
+            submitBtn.disabled = true;
+
             const response = await fetch('/api/rooms/create', {
                 method: 'POST',
                 headers: {
@@ -25,36 +30,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
 
             if (response.ok) {
-                // Показываем модальное окно с ссылкой и кодом
-                showInviteDetails(data);
+                // Немедленно переходим в комнату
+                window.location.href = `/room/${data.roomId}`;
             } else {
                 showError(data.error || 'Ошибка при создании комнаты');
+                // Восстанавливаем кнопку
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
             }
         } catch (error) {
             showError('Ошибка сети: ' + error.message);
-        }
-    });
-
-    joinRoomForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const roomId = document.getElementById('roomId').value.trim();
-
-        if (!roomId) {
-            showError('Введите ID комнаты');
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/rooms/${roomId}/exists`);
-            const data = await response.json();
-
-            if (data.exists) {
-                window.location.href = `/room/${roomId}`;
-            } else {
-                showError('Комната не найдена');
-            }
-        } catch (error) {
-            showError('Ошибка сети: ' + error.message);
+            // Восстанавливаем кнопку
+            const submitBtn = createRoomForm.querySelector('button[type="submit"]');
+            submitBtn.textContent = 'Создать';
+            submitBtn.disabled = false;
         }
     });
 
@@ -96,91 +85,4 @@ document.addEventListener('DOMContentLoaded', function() {
             errorMessage.style.display = 'none';
         }, 5000);
     }
-
-    function showInviteDetails(roomData) {
-        // Создаем модальное окно с деталями приглашения
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.style.display = 'block';
-
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3>🎉 Комната создана!</h3>
-                    <span class="close">&times;</span>
-                </div>
-                <div class="modal-body">
-                    <div class="invite-section">
-                        <h4>🔗 Ссылка для приглашения:</h4>
-                        <div class="invite-field">
-                            <input type="text" id="inviteLink" value="${roomData.inviteLink}" readonly>
-                            <button onclick="copyToClipboard('inviteLink')">📋</button>
-                        </div>
-                    </div>
-
-                    <div class="invite-section">
-                        <h4>🔢 Код для подключения:</h4>
-                        <div class="code-display">
-                            <span class="invite-code">${roomData.inviteCode}</span>
-                            <button onclick="copyToClipboard('inviteCode')">📋</button>
-                        </div>
-                        <p class="code-hint">Сообщите этот код участникам для быстрого подключения</p>
-                    </div>
-
-                    <div class="action-buttons">
-                        <button onclick="window.location.href='/room/${roomData.roomId}'" class="btn-primary">
-                            🚀 Перейти в комнату
-                        </button>
-                        <button onclick="closeModal()" class="btn-secondary">
-                            Остаться на странице
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        // Обработчики для модального окна
-        modal.querySelector('.close').addEventListener('click', () => {
-            document.body.removeChild(modal);
-        });
-
-        window.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                document.body.removeChild(modal);
-            }
-        });
-    }
 });
-
-// Глобальные функции для копирования
-function copyToClipboard(elementId) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        const text = element.value || element.textContent;
-        navigator.clipboard.writeText(text).then(() => {
-            showTempMessage('Скопировано в буфер обмена');
-        }).catch(err => {
-            console.error('Failed to copy: ', err);
-        });
-    }
-}
-
-function closeModal() {
-    const modal = document.querySelector('.modal');
-    if (modal) {
-        document.body.removeChild(modal);
-    }
-}
-
-function showTempMessage(message) {
-    const tempMsg = document.createElement('div');
-    tempMsg.className = 'temp-message';
-    tempMsg.textContent = message;
-    document.body.appendChild(tempMsg);
-
-    setTimeout(() => {
-        document.body.removeChild(tempMsg);
-    }, 3000);
-}

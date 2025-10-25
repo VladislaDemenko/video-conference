@@ -15,6 +15,7 @@ class VideoConference {
         this.analyser = null;
         this.isInitialized = false;
         this.isScreenSharing = false;
+        this.inviteCode = null;
 
         this.initialize();
     }
@@ -22,7 +23,29 @@ class VideoConference {
     async initialize() {
         await this.setupEventListeners();
         await this.initializeWebSocket();
+        await this.loadRoomInfo();
         this.showPermissionModal();
+    }
+
+    async loadRoomInfo() {
+        try {
+            const response = await fetch(`/api/rooms/${this.roomId}`);
+            if (response.ok) {
+                const room = await response.json();
+                document.getElementById('roomName').textContent = room.name || 'Комната ' + this.roomId;
+                this.inviteCode = room.inviteCode;
+
+                const codeDisplay = document.getElementById('inviteCodeDisplay');
+                if (codeDisplay && this.inviteCode) {
+                    codeDisplay.textContent = this.inviteCode;
+                }
+            } else {
+                document.getElementById('roomName').textContent = 'Комната ' + this.roomId;
+            }
+        } catch (error) {
+            console.error('Error fetching room info:', error);
+            document.getElementById('roomName').textContent = 'Комната ' + this.roomId;
+        }
     }
 
     showPermissionModal() {
@@ -247,7 +270,6 @@ class VideoConference {
         // Управление комнатой
         document.getElementById('leaveBtn').addEventListener('click', () => this.leaveRoom());
         document.getElementById('inviteBtn').addEventListener('click', () => this.showInviteModal());
-        document.getElementById('copyLink').addEventListener('click', () => this.copyInviteLink());
 
         // Настройки
         document.getElementById('applySettings').addEventListener('click', () => this.applySettings());
@@ -314,7 +336,6 @@ class VideoConference {
         });
     }
 
-    // ДЕМОНСТРАЦИЯ ЭКРАНА
     async toggleScreenShare() {
         try {
             if (!this.isScreenSharing) {
@@ -348,7 +369,7 @@ class VideoConference {
                 // Обновляем UI
                 document.getElementById('screenShare').textContent = '🖥️🔴';
                 document.getElementById('screenShare').style.background = 'var(--error)';
-                document.getElementById('toggleVideo').style.display = 'none'; // Скрываем кнопку камеры при демонстрации
+                document.getElementById('toggleVideo').style.display = 'none';
 
                 this.addSystemMessage(`${this.username} начал(а) демонстрацию экрана`);
                 this.updateMediaStatus();
@@ -394,13 +415,12 @@ class VideoConference {
         // Обновляем UI
         document.getElementById('screenShare').textContent = '🖥️';
         document.getElementById('screenShare').style.background = '';
-        document.getElementById('toggleVideo').style.display = 'flex'; // Показываем кнопку камеры
+        document.getElementById('toggleVideo').style.display = 'flex';
 
         this.addSystemMessage(`${this.username} остановил(а) демонстрацию экрана`);
         this.updateMediaStatus();
     }
 
-    // УПРАВЛЕНИЕ КАМЕРОЙ
     toggleVideo() {
         if (this.isScreenSharing) {
             this.showError('Невозможно управлять камерой во время демонстрации экрана');
@@ -425,7 +445,6 @@ class VideoConference {
         }
     }
 
-    // УПРАВЛЕНИЕ МИКРОФОНОМ
     toggleAudio() {
         if (this.localStream) {
             const audioTrack = this.localStream.getAudioTracks()[0];
@@ -521,16 +540,16 @@ class VideoConference {
 
     joinRoom() {
         if (this.stompClient && this.stompClient.connected) {
-            this.stompClient.send(`/app/room/${this.roomId}/join`, {}, 
-                JSON.stringify({ 
-                    userId: this.userId, 
+            this.stompClient.send(`/app/room/${this.roomId}/join`, {},
+                JSON.stringify({
+                    userId: this.userId,
                     username: this.username,
                     action: 'join',
                     timestamp: new Date().toISOString(),
                     roomId: this.roomId
                 })
             );
-            
+
             this.addSystemMessage(`${this.username} присоединился к комнате`);
         }
     }
@@ -540,24 +559,24 @@ class VideoConference {
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => track.stop());
         }
-        
+
         if (this.screenStream) {
             this.screenStream.getTracks().forEach(track => track.stop());
         }
-        
+
         if (this.audioContext) {
             this.audioContext.close();
         }
-        
+
         // Закрываем все peer соединения
         Object.values(this.peerConnections).forEach(pc => {
             if (pc && pc.close) pc.close();
         });
-        
+
         // Отправляем сообщение о выходе
         if (this.stompClient && this.stompClient.connected) {
-            this.stompClient.send(`/app/room/${this.roomId}/leave`, {}, 
-                JSON.stringify({ 
+            this.stompClient.send(`/app/room/${this.roomId}/leave`, {},
+                JSON.stringify({
                     userId: this.userId,
                     username: this.username,
                     action: 'leave',
@@ -565,10 +584,10 @@ class VideoConference {
                     roomId: this.roomId
                 })
             );
-            
+
             this.stompClient.disconnect();
         }
-        
+
         // Перенаправляем на главную страницу
         setTimeout(() => {
             window.location.href = '/';
@@ -578,9 +597,9 @@ class VideoConference {
     sendMessage() {
         const input = document.getElementById('messageInput');
         const content = input.value.trim();
-        
+
         if (content && this.stompClient && this.stompClient.connected) {
-            this.stompClient.send(`/app/room/${this.roomId}/chat`, {}, 
+            this.stompClient.send(`/app/room/${this.roomId}/chat`, {},
                 JSON.stringify({
                     userId: this.userId,
                     username: this.username,
@@ -597,7 +616,7 @@ class VideoConference {
     handleChatMessage(message) {
         const chatMessages = document.getElementById('chatMessages');
         const messageElement = document.createElement('div');
-        
+
         if (message.type === 'SYSTEM') {
             messageElement.className = 'chat-message system-message';
             messageElement.innerHTML = `
@@ -612,7 +631,7 @@ class VideoConference {
                 <small>${new Date(message.timestamp).toLocaleTimeString()}</small>
             `;
         }
-        
+
         chatMessages.appendChild(messageElement);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
@@ -653,16 +672,16 @@ class VideoConference {
                 }
             }
         }
-        
+
         this.updateParticipantsUI();
     }
 
     updateParticipantsUI() {
         const participantsList = document.getElementById('participantsList');
         const participantsCount = document.getElementById('participantsCount');
-        
+
         participantsList.innerHTML = '';
-        
+
         const currentUserElement = document.createElement('div');
         currentUserElement.className = 'participant current-user';
         currentUserElement.innerHTML = `
@@ -670,7 +689,7 @@ class VideoConference {
             <span class="status connected">🟢</span>
         `;
         participantsList.appendChild(currentUserElement);
-        
+
         this.participants.forEach(participant => {
             const participantElement = document.createElement('div');
             participantElement.className = 'participant';
@@ -680,7 +699,7 @@ class VideoConference {
             `;
             participantsList.appendChild(participantElement);
         });
-        
+
         participantsCount.textContent = this.participants.length + 1;
     }
 
@@ -710,13 +729,27 @@ class VideoConference {
     showInviteModal() {
         document.getElementById('inviteModal').style.display = 'block';
         document.getElementById('inviteLink').value = window.location.href;
+
+        // Обновляем код приглашения, если он еще не загружен
+        const codeDisplay = document.getElementById('inviteCodeDisplay');
+        if (codeDisplay && this.inviteCode) {
+            codeDisplay.textContent = this.inviteCode;
+        } else if (codeDisplay) {
+            codeDisplay.textContent = 'Загрузка...';
+            // Повторно загружаем информацию о комнате
+            this.loadRoomInfo();
+        }
+
+        // Добавляем обработчики для кнопок копирования
+        document.getElementById('copyLink').addEventListener('click', () => this.copyInviteLink());
+        document.getElementById('copyCode').addEventListener('click', () => this.copyInviteCode());
     }
 
     copyInviteLink() {
         const linkInput = document.getElementById('inviteLink');
         linkInput.select();
         linkInput.setSelectionRange(0, 99999);
-        
+
         try {
             const successful = document.execCommand('copy');
             if (successful) {
@@ -724,6 +757,19 @@ class VideoConference {
             }
         } catch (err) {
             console.error('Failed to copy: ', err);
+        }
+    }
+
+    copyInviteCode() {
+        if (this.inviteCode) {
+            navigator.clipboard.writeText(this.inviteCode).then(() => {
+                this.showTempMessage('Код приглашения скопирован в буфер обмена');
+            }).catch(err => {
+                console.error('Failed to copy code: ', err);
+                this.showError('Не удалось скопировать код');
+            });
+        } else {
+            this.showError('Код приглашения не загружен');
         }
     }
 
