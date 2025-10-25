@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Conference Room</title>
+    <link rel="stylesheet" th:href="@{/css/room.css}">
+</head>
+<body>
+<div class="room-container">
+    <!-- Header -->
+    <header class="room-header">
+        <div class="room-info">
+            <h2 id="roomName">Комната</h2>
+            <div class="participants-count">
+                <span id="participantsCount">0</span> участников
+            </div>
+        </div>
+        <div class="room-controls">
+            <button id="inviteBtn" class="btn-secondary">Пригласить</button>
+            <button id="leaveBtn" class="btn-danger">Выйти</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Video Grid -->
+        <div class="video-section">
+            <div id="videoGrid" class="video-grid">
+                <!-- Видео участников будут добавляться здесь -->
+            </div>
+
+            <!-- Local Video -->
+            <div class="local-video-container">
+                <video id="localVideo" autoplay muted></video>
+                <div class="video-controls">
+                    <button id="toggleVideo" class="control-btn video-active">🎥</button>
+                    <button id="toggleAudio" class="control-btn audio-active">🎤</button>
+                    <button id="screenShare" class="control-btn">🖥️</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <!-- Participants List -->
+            <div class="participants-section">
+                <h3>Участники</h3>
+                <div id="participantsList" class="participants-list">
+                    <!-- Список участников -->
+                </div>
+            </div>
+
+            <!-- Chat -->
+            <div class="chat-section">
+                <h3>Чат</h3>
+                <div id="chatMessages" class="chat-messages">
+                    <!-- Сообщения чата -->
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="messageInput" placeholder="Введите сообщение...">
+                    <button id="sendMessage">Отправить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Invite Modal -->
+<div id="inviteModal" class="modal">
+    <div class="modal-content">
+        <span class="close">&times;</span>
+        <h3>Пригласить в комнату</h3>
+        <p>Отправьте эту ссылку:</p>
+        <input type="text" id="inviteLink" readonly>
+        <button id="copyLink">Копировать</button>
+    </div>
+</div>
+
+<script src="/webjars/sockjs-client/sockjs.min.js"></script>
+<script src="/webjars/stomp-websocket/stomp.min.js"></script>
+<script th:src="@{/js/room.js}"></script>
+</body>
+</html>
