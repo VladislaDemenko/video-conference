@@ -49,4 +49,13 @@ public class WebRTCSignalingController {
         String roomId = (String) message.get("roomId");
         messagingTemplate.convertAndSend("/topic/room/" + roomId + "/participants", message);
     }
+
+    @MessageMapping("/webrtc.signal")
+    public void handleSignal(Map<String, Object> signal) {
+        String targetUserId = (String) signal.get("targetUserId");
+        String roomId = (String) signal.get("roomId");
+
+        // Отправляем сигнал конкретному пользователю
+        messagingTemplate.convertAndSendToUser(targetUserId, "/queue/webrtc", signal);
+    }
 }
