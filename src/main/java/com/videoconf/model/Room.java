@@ -18,13 +18,10 @@ public class Room {
     private int maxParticipants;
 
     @Column(unique = true)
-    private String inviteCode; // Новое поле: код приглашения
+    private String inviteCode;
 
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL)
     private Set<Participant> participants = new HashSet<>();
-
-    @OneToMany(mappedBy = "room", cascade = CascadeType.ALL)
-    private Set<ChatMessage> messages = new HashSet<>();
 
     public Room() {}
 
@@ -51,7 +48,4 @@ public class Room {
 
     public Set<Participant> getParticipants() { return participants; }
     public void setParticipants(Set<Participant> participants) { this.participants = participants; }
-
-    public Set<ChatMessage> getMessages() { return messages; }
-    public void setMessages(Set<ChatMessage> messages) { this.messages = messages; }
 }

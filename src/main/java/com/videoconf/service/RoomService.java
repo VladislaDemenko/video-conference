@@ -22,7 +22,7 @@ public class RoomService {
         room.setCreatedAt(LocalDateTime.now());
         room.setActive(true);
         room.setMaxParticipants(maxParticipants);
-        room.setInviteCode(generateInviteCode()); // Генерируем код приглашения
+        room.setInviteCode(generateInviteCode());
 
         return roomRepository.save(room);
     }
@@ -48,7 +48,6 @@ public class RoomService {
     }
 
     private String generateInviteCode() {
-        // Генерируем 6-значный цифровой код
         return String.format("%06d", (int) (Math.random() * 1000000));
     }
 }

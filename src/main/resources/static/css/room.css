@@ -39,7 +39,6 @@ body {
     background: var(--darker);
 }
 
-/* Header */
 .room-header {
     background: rgba(30, 41, 59, 0.95);
     backdrop-filter: blur(20px);
@@ -115,7 +114,6 @@ body {
     box-shadow: var(--shadow);
 }
 
-/* Main Content */
 .main-content {
     display: flex;
     flex: 1;
@@ -124,7 +122,6 @@ body {
     padding: 20px;
 }
 
-/* Video Section */
 .video-section {
     flex: 1;
     display: flex;
@@ -175,7 +172,6 @@ body {
     backdrop-filter: blur(10px);
 }
 
-/* Local Video */
 .local-video-container {
     position: relative;
     width: 320px;
@@ -267,7 +263,6 @@ body {
     color: var(--error);
 }
 
-/* Sidebar */
 .sidebar {
     width: 380px;
     background: rgba(30, 41, 59, 0.95);
@@ -350,7 +345,6 @@ body {
     color: var(--error);
 }
 
-/* Chat */
 .chat-section {
     flex: 1;
     display: flex;
@@ -442,7 +436,6 @@ body {
     transform: translateY(-2px);
 }
 
-/* Modals */
 .modal {
     display: none;
     position: fixed;
@@ -507,7 +500,6 @@ body {
     padding: 24px;
 }
 
-/* Invite Modal */
 .modal-description {
     color: var(--gray-light);
     margin-bottom: 16px;
@@ -589,7 +581,6 @@ body {
     margin: 0;
 }
 
-/* Settings Modal */
 .settings-section {
     margin: 20px 0;
 }
@@ -678,7 +669,6 @@ body {
     transform: translateY(-2px);
 }
 
-/* Permission Modal */
 .permission-hero {
     text-align: center;
     margin-bottom: 24px;
@@ -757,7 +747,6 @@ body {
     box-shadow: var(--shadow);
 }
 
-/* Utility Classes */
 .video-placeholder {
     width: 100%;
     height: 100%;
@@ -806,40 +795,17 @@ body {
     animation: slideIn 0.3s ease;
 }
 
-.media-error {
-    background: rgba(239, 68, 68, 0.1);
-    color: var(--error);
-    padding: 16px;
-    border-radius: var(--border-radius);
-    margin: 16px 0;
-    border-left: 4px solid var(--error);
+.chat-message.my-message {
+    background: rgba(99, 102, 241, 0.15);
+    border-left: 3px solid var(--primary);
+    margin-left: 10px;
+    margin-right: 0;
 }
 
-.permission-guide {
-    background: rgba(99, 102, 241, 0.1);
-    padding: 16px;
-    border-radius: var(--border-radius);
-    margin: 16px 0;
-    border-left: 4px solid var(--primary);
+.chat-message.my-message strong {
+    color: var(--primary-light);
 }
 
-.permission-guide h4 {
-    color: var(--primary);
-    margin-bottom: 12px;
-    font-size: 0.875rem;
-}
-
-.permission-guide ol {
-    margin-left: 20px;
-    color: var(--gray-light);
-    font-size: 0.75rem;
-}
-
-.permission-guide li {
-    margin-bottom: 8px;
-}
-
-/* Стили для состояния демонстрации экрана */
 .local-video-container.screen-sharing {
     border-color: var(--warning);
     box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
@@ -860,7 +826,6 @@ body {
     white-space: nowrap;
 }
 
-/* Анимации для кнопок */
 .control-btn {
     transition: all 0.3s ease, transform 0.2s ease;
 }
@@ -869,14 +834,12 @@ body {
     transform: scale(0.95);
 }
 
-/* Состояние отключенной кнопки во время демонстрации */
 .control-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     transform: none !important;
 }
 
-/* Scrollbars */
 ::-webkit-scrollbar {
     width: 6px;
 }
@@ -895,7 +858,6 @@ body {
     background: var(--primary-dark);
 }
 
-/* Animations */
 @keyframes slideIn {
     from {
         opacity: 0;
@@ -907,7 +869,6 @@ body {
     }
 }
 
-/* Loading States */
 .loading {
     opacity: 0.7;
     pointer-events: none;
@@ -931,7 +892,6 @@ body {
     100% { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
-/* Responsive Design */
 @media (max-width: 1024px) {
     .main-content {
         flex-direction: column;
@@ -990,47 +950,4 @@ body {
     .permission-actions {
         flex-direction: column;
     }
-}
-
-.chat-message.my-message {
-    background: rgba(99, 102, 241, 0.15);
-    border-left: 3px solid var(--primary);
-    margin-left: 10px;
-    margin-right: 0;
-}
-
-.chat-message.my-message strong {
-    color: var(--primary-light);
-}
-
-.chat-message {
-    background: rgba(255, 255, 255, 0.05);
-    padding: 12px 16px;
-    border-radius: var(--border-radius);
-    border-left: 3px solid var(--gray);
-    transition: all 0.3s ease;
-    margin: 8px 0;
-}
-
-.chat-message.system-message {
-    background: rgba(245, 158, 11, 0.1);
-    border-left-color: var(--warning);
-    font-style: italic;
-    text-align: center;
-}
-
-.chat-message:hover {
-    background: rgba(255, 255, 255, 0.08);
-    transform: translateX(4px);
-}
-
-.chat-message strong {
-    color: var(--primary);
-    font-weight: 600;
-}
-
-.chat-message small {
-    color: var(--gray);
-    font-size: 0.7rem;
-    margin-left: 8px;
 }

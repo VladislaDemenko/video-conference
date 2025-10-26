@@ -9,7 +9,6 @@
 </head>
 <body>
 <div class="room-container">
-    <!-- Header -->
     <header class="room-header">
         <div class="room-info">
             <h2 id="roomName">🎥 Комната видеоконференции</h2>
@@ -27,9 +26,7 @@
         </div>
     </header>
 
-    <!-- Main Content -->
     <div class="main-content">
-        <!-- Video Section -->
         <div class="video-section">
             <div id="videoGrid" class="video-grid">
                 <div class="video-placeholder">
@@ -38,7 +35,6 @@
                 </div>
             </div>
 
-            <!-- Local Video -->
             <div class="local-video-container">
                 <video id="localVideo" autoplay muted playsinline></video>
                 <div class="video-info">
@@ -62,9 +58,7 @@
             </div>
         </div>
 
-        <!-- Sidebar -->
         <div class="sidebar">
-            <!-- Participants List -->
             <div class="participants-section">
                 <h3>Участники (<span id="participantsCountHeader">1</span>)</h3>
                 <div id="participantsList" class="participants-list">
@@ -75,7 +69,6 @@
                 </div>
             </div>
 
-            <!-- Chat -->
             <div class="chat-section">
                 <h3>Чат</h3>
                 <div id="chatMessages" class="chat-messages">
@@ -93,7 +86,6 @@
     </div>
 </div>
 
-<!-- Invite Modal -->
 <div id="inviteModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
@@ -133,7 +125,6 @@
     </div>
 </div>
 
-<!-- Settings Modal -->
 <div id="settingsModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
@@ -172,7 +163,6 @@
     </div>
 </div>
 
-<!-- Permission Modal -->
 <div id="permissionModal" class="modal" style="display: block;">
     <div class="modal-content">
         <div class="modal-header">
@@ -225,5 +215,39 @@
 <script src="/webjars/sockjs-client/1.5.1/sockjs.min.js"></script>
 <script src="/webjars/stomp-websocket/2.3.4/stomp.min.js"></script>
 <script src="/js/room.js"></script>
+<script>
+    window.addEventListener('error', function(e) {
+        if (e.error && e.error.name && e.error.name.includes('WebRTC')) {
+            console.error('WebRTC Error:', e.error);
+        }
+    });
+
+    if (!window.RTCPeerConnection) {
+        window.RTCPeerConnection = window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+    }
+</script>
+<script>
+    // Глобальная обработка ошибок
+    window.addEventListener('error', function(e) {
+        console.error('Global error:', e.error);
+    });
+
+    // Проверка поддержки WebRTC
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Ваш браузер не поддерживает видеозвонки. Пожалуйста, используйте современный браузер (Chrome, Firefox, Edge).');
+    }
+
+    // Полифиллы для старых браузеров
+    if (!window.RTCPeerConnection) {
+        window.RTCPeerConnection = window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+    }
+
+    if (!navigator.mediaDevices.getDisplayMedia) {
+        navigator.mediaDevices.getDisplayMedia = navigator.mediaDevices.getDisplayMedia ||
+                                                function() {
+            return Promise.reject(new Error('getDisplayMedia is not implemented'));
+        };
+    }
+</script>
 </body>
 </html>

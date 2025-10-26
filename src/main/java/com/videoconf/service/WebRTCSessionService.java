@@ -1,7 +1,6 @@
 package com.videoconf.service;
 
 import org.springframework.stereotype.Service;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.time.LocalDateTime;
@@ -33,7 +32,6 @@ public class WebRTCSessionService {
         Map<String, UserSession> room = roomSessions.get(roomId);
         if (room != null) {
             room.remove(userId);
-            // Удаляем комнату если она пустая
             if (room.isEmpty()) {
                 roomSessions.remove(roomId);
             }

@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         try {
-            // Показываем индикатор загрузки
             const submitBtn = createRoomForm.querySelector('button[type="submit"]');
             const originalText = submitBtn.textContent;
             submitBtn.textContent = 'Создание...';
@@ -30,17 +29,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
 
             if (response.ok) {
-                // Немедленно переходим в комнату
                 window.location.href = `/room/${data.roomId}`;
             } else {
                 showError(data.error || 'Ошибка при создании комнаты');
-                // Восстанавливаем кнопку
                 submitBtn.textContent = originalText;
                 submitBtn.disabled = false;
             }
         } catch (error) {
             showError('Ошибка сети: ' + error.message);
-            // Восстанавливаем кнопку
             const submitBtn = createRoomForm.querySelector('button[type="submit"]');
             submitBtn.textContent = 'Создать';
             submitBtn.disabled = false;
@@ -61,7 +57,6 @@ document.addEventListener('DOMContentLoaded', function() {
             const existsData = await response.json();
 
             if (existsData.exists) {
-                // Получаем информацию о комнате по коду
                 const roomResponse = await fetch(`/api/rooms/invite/${inviteCode}`);
                 const roomData = await roomResponse.json();
 

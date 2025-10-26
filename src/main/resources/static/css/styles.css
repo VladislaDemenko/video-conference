@@ -41,7 +41,7 @@ body {
     padding: 48px;
     box-shadow: var(--shadow-lg);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    max-width: 800px; /* Уменьшили ширину, так как теперь только 2 карточки */
+    max-width: 800px;
     width: 90%;
     text-align: center;
 }
@@ -68,7 +68,7 @@ header p {
 
 .main-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr; /* Теперь только 2 колонки */
+    grid-template-columns: 1fr 1fr;
     gap: 32px;
     margin-bottom: 32px;
 }
