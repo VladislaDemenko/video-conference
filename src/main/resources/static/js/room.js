@@ -14,13 +14,18 @@ class RoomManager {
         this.isVideoEnabled = true;
         this.isAudioEnabled = true;
         this.isScreenSharing = false;
+        this.autoScrollChat = true;
+        this.scrollToBottomButton = null;
 
-        // Универсальная конфигурация WebRTC
+        // WebRTC configuration
         this.rtcConfiguration = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' }
+            ],
+            iceCandidatePoolSize: 10
         };
 
         console.log('🚀 RoomManager initialized');
@@ -29,28 +34,25 @@ class RoomManager {
 
         this.initializeEventListeners();
         this.setupReconnectionHandling();
-
-        // Автоматически запускаем медиа и подключение
-        this.startMedia();
     }
 
     initializeEventListeners() {
         // Control buttons
-        document.getElementById('toggleVideo')?.addEventListener('click', () => this.toggleVideo());
-        document.getElementById('toggleAudio')?.addEventListener('click', () => this.toggleAudio());
-        document.getElementById('screenShare')?.addEventListener('click', () => this.toggleScreenShare());
-        document.getElementById('leaveBtn')?.addEventListener('click', () => this.leaveRoom());
-        document.getElementById('inviteBtn')?.addEventListener('click', () => this.showInviteModal());
+        document.getElementById('toggleVideo').addEventListener('click', () => this.toggleVideo());
+        document.getElementById('toggleAudio').addEventListener('click', () => this.toggleAudio());
+        document.getElementById('screenShare').addEventListener('click', () => this.toggleScreenShare());
+        document.getElementById('leaveBtn').addEventListener('click', () => this.leaveRoom());
+        document.getElementById('inviteBtn').addEventListener('click', () => this.showInviteModal());
 
         // Chat
-        document.getElementById('sendMessage')?.addEventListener('click', () => this.sendChatMessage());
-        document.getElementById('messageInput')?.addEventListener('keypress', (e) => {
+        document.getElementById('sendMessage').addEventListener('click', () => this.sendChatMessage());
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendChatMessage();
         });
 
         // Modal windows
-        document.getElementById('startMedia')?.addEventListener('click', () => this.startMedia());
-        document.getElementById('cancelJoin')?.addEventListener('click', () => this.cancelJoin());
+        document.getElementById('startMedia').addEventListener('click', () => this.startMedia());
+        document.getElementById('cancelJoin').addEventListener('click', () => this.cancelJoin());
 
         // Close modals
         document.querySelectorAll('.close').forEach(closeBtn => {
@@ -60,8 +62,8 @@ class RoomManager {
         });
 
         // Copy buttons
-        document.getElementById('copyLink')?.addEventListener('click', () => this.copyToClipboard('inviteLink'));
-        document.getElementById('copyCode')?.addEventListener('click', () => this.copyToClipboard('inviteCodeDisplay'));
+        document.getElementById('copyLink').addEventListener('click', () => this.copyToClipboard('inviteLink'));
+        document.getElementById('copyCode').addEventListener('click', () => this.copyToClipboard('inviteCodeDisplay'));
 
         // Window events
         window.addEventListener('click', (e) => {
@@ -71,6 +73,10 @@ class RoomManager {
         });
 
         window.addEventListener('beforeunload', () => this.cleanup());
+
+        // Scroll management
+        this.setupAutoScroll();
+        this.setupScrollToBottom();
     }
 
     setupReconnectionHandling() {
@@ -90,20 +96,70 @@ class RoomManager {
         }, 10000);
     }
 
+    setupAutoScroll() {
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            chatMessages.addEventListener('scroll', () => {
+                const isAtBottom = chatMessages.scrollHeight - chatMessages.clientHeight <= chatMessages.scrollTop + 50;
+                this.autoScrollChat = isAtBottom;
+                this.updateScrollButton();
+            });
+        }
+    }
+
+    setupScrollToBottom() {
+        const scrollButton = document.createElement('button');
+        scrollButton.className = 'scroll-to-bottom';
+        scrollButton.innerHTML = '⬇️';
+        scrollButton.title = 'Прокрутить вниз';
+
+        scrollButton.addEventListener('click', () => {
+            this.scrollChatToBottom();
+        });
+
+        const chatSection = document.querySelector('.chat-section');
+        if (chatSection) {
+            chatSection.style.position = 'relative';
+            chatSection.appendChild(scrollButton);
+            this.scrollToBottomButton = scrollButton;
+        }
+    }
+
+    updateScrollButton() {
+        const chatMessages = document.getElementById('chatMessages');
+        const scrollButton = this.scrollToBottomButton;
+
+        if (!chatMessages || !scrollButton) return;
+
+        const isAtBottom = chatMessages.scrollHeight - chatMessages.clientHeight <= chatMessages.scrollTop + 100;
+
+        if (isAtBottom) {
+            scrollButton.classList.remove('visible');
+        } else {
+            scrollButton.classList.add('visible');
+        }
+    }
+
+    scrollChatToBottom() {
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            chatMessages.scrollTo({
+                top: chatMessages.scrollHeight,
+                behavior: 'smooth'
+            });
+            this.autoScrollChat = true;
+            this.updateScrollButton();
+        }
+    }
+
     async startMedia() {
         try {
-            // Скрываем модальное окно разрешений если оно есть
-            const permissionModal = document.getElementById('permissionModal');
-            if (permissionModal) {
-                permissionModal.style.display = 'none';
-            }
-
+            document.getElementById('permissionModal').style.display = 'none';
             await this.setupMediaDevices();
             this.connectWebSocket();
         } catch (error) {
             console.error('Error starting media:', error);
             this.showError('Не удалось получить доступ к камере и микрофону');
-
             // Все равно подключаем WebSocket для чата
             this.connectWebSocket();
         }
@@ -116,42 +172,20 @@ class RoomManager {
     async setupMediaDevices() {
         try {
             console.log('🎥 Requesting media devices...');
-
-            // Пробуем получить медиа с базовыми настройками
-            const constraints = {
+            this.localStream = await navigator.mediaDevices.getUserMedia({
                 video: true,
                 audio: true
-            };
-
-            this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+            });
 
             const localVideo = document.getElementById('localVideo');
-            if (localVideo) {
-                localVideo.srcObject = this.localStream;
-            }
+            localVideo.srcObject = this.localStream;
 
             console.log('✅ Media devices acquired');
             this.showTempMessage('✅ Камера и микрофон подключены');
-
             this.updateMediaStatus();
 
         } catch (error) {
             console.error('❌ Error accessing media devices:', error);
-
-            // Показываем дружелюбное сообщение
-            let errorMessage = 'Не удалось получить доступ к медиаустройствам. ';
-
-            if (error.name === 'NotAllowedError') {
-                errorMessage += 'Пожалуйста, разрешите доступ к камере и микрофону в настройках браузера.';
-            } else if (error.name === 'NotFoundError') {
-                errorMessage += 'Камера или микрофон не найдены.';
-            } else if (error.name === 'NotSupportedError') {
-                errorMessage += 'Ваш браузер не поддерживает видеозвонки.';
-            } else {
-                errorMessage += error.message;
-            }
-
-            this.showError(errorMessage);
             throw error;
         }
     }
@@ -170,87 +204,59 @@ class RoomManager {
 
     connectWebSocket() {
         console.log('🔌 Connecting WebSocket...');
+        const socket = new SockJS('/ws');
+        this.stompClient = Stomp.over(socket);
 
-        try {
-            const socket = new SockJS('/ws');
-            this.stompClient = Stomp.over(socket);
+        this.stompClient.debug = null;
 
-            // Минимальные debug логи
-            this.stompClient.debug = function(str) {
-                if (str.toLowerCase().includes('error')) {
-                    console.error('STOMP:', str);
-                }
-            };
+        this.stompClient.connect({}, (frame) => {
+            console.log('✅ WebSocket connected:', frame);
+            this.isConnected = true;
+            this.showTempMessage('✅ Подключено к серверу');
 
-            this.stompClient.connect({}, (frame) => {
-                console.log('✅ WebSocket connected:', frame);
-                this.isConnected = true;
-                this.showTempMessage('✅ Подключено к серверу');
+            this.subscribeToTopics();
+            this.sendJoinMessage();
 
-                this.subscribeToTopics();
-                this.sendJoinMessage();
+            setTimeout(() => this.requestRoomStatus(), 1000);
 
-                // Запрашиваем статус комнаты после подключения
-                setTimeout(() => this.requestRoomStatus(), 1000);
-
-            }, (error) => {
-                console.error('❌ WebSocket connection error:', error);
-                this.showError('Ошибка подключения к серверу. Попытка переподключения...');
-                setTimeout(() => this.connectWebSocket(), 5000);
-            });
-        } catch (error) {
-            console.error('❌ WebSocket initialization error:', error);
-            setTimeout(() => this.connectWebSocket(), 5000);
-        }
+        }, (error) => {
+            console.error('❌ WebSocket connection error:', error);
+            this.showError('Ошибка подключения');
+            setTimeout(() => this.connectWebSocket(), 3000);
+        });
     }
 
     subscribeToTopics() {
         // Participants
         this.stompClient.subscribe('/topic/room/' + this.currentRoomId + '/participants',
             (message) => {
-                try {
-                    const data = JSON.parse(message.body);
-                    console.log('👥 Participants message:', data);
-                    this.handleParticipantsMessage(data);
-                } catch (e) {
-                    console.error('Error parsing participants message:', e);
-                }
+                const data = JSON.parse(message.body);
+                console.log('👥 Participants message:', data);
+                this.handleParticipantsMessage(data);
             });
 
         // Chat
         this.stompClient.subscribe('/topic/room/' + this.currentRoomId + '/chat',
             (message) => {
-                try {
-                    const data = JSON.parse(message.body);
-                    console.log('💬 Chat message:', data);
-                    this.handleChatMessage(data);
-                } catch (e) {
-                    console.error('Error parsing chat message:', e);
-                }
+                const data = JSON.parse(message.body);
+                console.log('💬 Chat message:', data);
+                this.handleChatMessage(data);
             });
 
-        // WebRTC - пользовательская очередь
+        // WebRTC
         this.stompClient.subscribe('/user/queue/webrtc',
             (message) => {
-                try {
-                    const data = JSON.parse(message.body);
-                    console.log('📨 WebRTC private message:', data);
-                    this.handleWebRTCMessage(data);
-                } catch (e) {
-                    console.error('Error parsing WebRTC message:', e);
-                }
+                const data = JSON.parse(message.body);
+                console.log('📨 WebRTC message:', data);
+                this.handleWebRTCMessage(data);
             });
 
         // Room status
         this.stompClient.subscribe('/user/queue/room-status',
             (message) => {
-                try {
-                    const data = JSON.parse(message.body);
-                    console.log('📊 Room status:', data);
-                    this.handleRoomStatus(data);
-                } catch (e) {
-                    console.error('Error parsing room status:', e);
-                }
+                const data = JSON.parse(message.body);
+                console.log('📊 Room status:', data);
+                this.handleRoomStatus(data);
             });
     }
 
@@ -288,30 +294,19 @@ class RoomManager {
 
         switch (message.type) {
             case 'offer':
-                console.log('📥 Received OFFER from:', fromUserId);
                 this.handleIncomingOffer(fromUserId, message.offer);
                 break;
-
             case 'answer':
-                console.log('📥 Received ANSWER from:', fromUserId);
                 this.handleIncomingAnswer(fromUserId, message.answer);
                 break;
-
             case 'ice-candidate':
-                console.log('🧊 Received ICE candidate from:', fromUserId);
                 this.handleIceCandidate(fromUserId, message.candidate);
                 break;
-
             case 'NEW_USER_JOINED':
-                console.log('🎯 New user joined notification:', fromUserId);
+                console.log('🎯 New user notification for WebRTC:', fromUserId);
                 setTimeout(() => {
                     this.setupWebRTCWithUser(fromUserId);
                 }, 1000);
-                break;
-
-            case 'CONNECT_TO_USER':
-                console.log('🔗 Command to connect to user:', message.targetUserId);
-                this.setupWebRTCWithUser(message.targetUserId);
                 break;
         }
     }
@@ -319,15 +314,13 @@ class RoomManager {
     handleRoomStatus(message) {
         console.log('🔄 Updating room status with participants:', message.participants);
         this.updateParticipantCount(message.participantCount);
-
         if (message.participants) {
             this.updateParticipantsList(message.participants);
 
-            // Устанавливаем соединения со всеми участниками
             setTimeout(() => {
                 message.participants.forEach(participant => {
                     if (participant.userId !== this.currentUser.id) {
-                        console.log('🎯 Setting up WebRTC with participant:', participant.userId);
+                        console.log('🎯 Setting up WebRTC with existing participant:', participant.userId);
                         if (!this.peerConnections.has(participant.userId)) {
                             this.setupWebRTCWithUser(participant.userId);
                         }
@@ -348,28 +341,27 @@ class RoomManager {
 
             const peerConnection = new RTCPeerConnection(this.rtcConfiguration);
 
-            // Добавляем локальные треки
+            // Add local tracks
             if (this.localStream) {
                 this.localStream.getTracks().forEach(track => {
                     peerConnection.addTrack(track, this.localStream);
                 });
+                console.log('✅ Local tracks added to peer connection');
             }
 
-            // Обработка входящего потока
+            // Handle incoming stream
             peerConnection.ontrack = (event) => {
                 console.log('🎬 Received remote stream from:', targetUserId);
                 const [remoteStream] = event.streams;
-
-                if (remoteStream) {
-                    this.remoteStreams.set(targetUserId, remoteStream);
-                    this.updateRemoteVideo(targetUserId, remoteStream);
-                    this.showTempMessage('✅ Видеосвязь установлена');
-                }
+                this.remoteStreams.set(targetUserId, remoteStream);
+                this.updateRemoteVideo(targetUserId, remoteStream);
+                this.showTempMessage('✅ Видеосвязь установлена');
             };
 
             // ICE candidates
             peerConnection.onicecandidate = (event) => {
                 if (event.candidate) {
+                    console.log('🧊 Sending ICE candidate to:', targetUserId);
                     this.sendWebRTCMessage({
                         type: 'ice-candidate',
                         targetUserId: targetUserId,
@@ -379,10 +371,9 @@ class RoomManager {
                 }
             };
 
-            // Состояние соединения
+            // Connection state
             peerConnection.oniceconnectionstatechange = () => {
-                const state = peerConnection.iceConnectionState;
-                console.log(`🧊 ICE connection state with ${targetUserId}: ${state}`);
+                console.log(`🔗 Connection state with ${targetUserId}: ${peerConnection.iceConnectionState}`);
             };
 
             this.peerConnections.set(targetUserId, peerConnection);
@@ -390,7 +381,7 @@ class RoomManager {
 
         } catch (error) {
             console.error('❌ Error initializing WebRTC:', error);
-            return null;
+            this.showError('Ошибка инициализации видеосвязи');
         }
     }
 
@@ -423,8 +414,6 @@ class RoomManager {
             console.log('📥 Handling OFFER from:', fromUserId);
 
             const peerConnection = await this.initializeWebRTCForUser(fromUserId);
-            if (!peerConnection) return;
-
             await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
 
             const answer = await peerConnection.createAnswer();
@@ -451,6 +440,7 @@ class RoomManager {
             const peerConnection = this.peerConnections.get(fromUserId);
             if (peerConnection) {
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                console.log('✅ Remote description set for:', fromUserId);
             }
         } catch (error) {
             console.error('❌ Error handling answer:', error);
@@ -464,6 +454,7 @@ class RoomManager {
             const peerConnection = this.peerConnections.get(fromUserId);
             if (peerConnection) {
                 await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                console.log('✅ ICE candidate added for:', fromUserId);
             }
         } catch (error) {
             console.error('❌ Error handling ICE candidate:', error);
@@ -473,26 +464,20 @@ class RoomManager {
     sendWebRTCMessage(message) {
         if (this.stompClient && this.isConnected) {
             message.roomId = this.currentRoomId;
-            message.userId = this.currentUser.id;
 
             const routingKey = `/app/webrtc.${message.type}`;
-
-            try {
-                this.stompClient.send(routingKey, {}, JSON.stringify(message));
-                return true;
-            } catch (error) {
-                console.error('❌ Error sending WebRTC message:', error);
-                return false;
-            }
+            console.log('📨 Sending WebRTC message via:', routingKey);
+            this.stompClient.send(routingKey, {}, JSON.stringify(message));
         } else {
             console.error('❌ Cannot send WebRTC message: not connected');
-            return false;
         }
     }
 
     async setupWebRTCWithUser(targetUserId) {
-        if (targetUserId === this.currentUser.id) return;
-        if (this.peerConnections.has(targetUserId)) return;
+        if (targetUserId === this.currentUser.id) {
+            console.log('⚠️ Skipping WebRTC with self');
+            return;
+        }
 
         console.log('🎯 Setting up WebRTC with:', targetUserId);
         await this.createAndSendOffer(targetUserId);
@@ -536,6 +521,8 @@ class RoomManager {
 
         if (countElement) countElement.textContent = count;
         if (headerCountElement) headerCountElement.textContent = count;
+
+        console.log('👥 Participant count updated:', count);
     }
 
     updateParticipantsList(participantsData = null) {
@@ -544,11 +531,11 @@ class RoomManager {
 
         participantsList.innerHTML = '';
 
-        // Добавляем текущего пользователя
+        // Add current user
         const currentUserElement = this.createParticipantElement(this.currentUser, true);
         participantsList.appendChild(currentUserElement);
 
-        // Добавляем других участников
+        // Add other participants
         const participantsToShow = participantsData || Array.from(this.participants.values());
         participantsToShow.forEach(participant => {
             if (participant.userId !== this.currentUser.id) {
@@ -556,6 +543,13 @@ class RoomManager {
                 participantsList.appendChild(participantElement);
             }
         });
+
+        // Show scroll indicator if many participants
+        if (participantsToShow.length > 5) {
+            participantsList.classList.add('scrollable');
+        } else {
+            participantsList.classList.remove('scrollable');
+        }
     }
 
     createParticipantElement(participant, isCurrentUser) {
@@ -584,7 +578,7 @@ class RoomManager {
             videoContainer.id = `remote-video-${userId}`;
 
             videoContainer.innerHTML = `
-                <video id="video-${userId}" autoplay playsinline muted></video>
+                <video id="video-${userId}" autoplay playsinline></video>
                 <div class="participant-info">
                     ${username}
                 </div>
@@ -592,6 +586,7 @@ class RoomManager {
             `;
 
             videoGrid.appendChild(videoContainer);
+            console.log('🎬 Created remote video element for:', userId);
         }
     }
 
@@ -599,12 +594,14 @@ class RoomManager {
         const videoElement = document.getElementById(`video-${userId}`);
         if (videoElement) {
             videoElement.srcObject = stream;
+            console.log('✅ Remote video stream set for:', userId);
 
+            // Update connection status
             const videoContainer = document.getElementById(`remote-video-${userId}`);
             const statusElement = videoContainer.querySelector('.connection-status');
             if (statusElement) {
                 statusElement.textContent = 'Подключено';
-                statusElement.style.color = '#10b981';
+                statusElement.className = 'connection-status connected';
             }
         }
     }
@@ -635,6 +632,7 @@ class RoomManager {
                 timestamp: new Date().toISOString()
             };
 
+            console.log('📤 Sending join message:', joinMessage);
             this.stompClient.send("/app/room.join", {}, JSON.stringify(joinMessage));
         }
     }
@@ -648,6 +646,7 @@ class RoomManager {
                 timestamp: new Date().toISOString()
             };
 
+            console.log('📤 Sending leave message');
             this.stompClient.send("/app/room.leave", {}, JSON.stringify(leaveMessage));
         }
     }
@@ -660,6 +659,7 @@ class RoomManager {
                 timestamp: new Date().toISOString()
             };
 
+            console.log('📤 Requesting room status');
             this.stompClient.send("/app/room.status", {}, JSON.stringify(statusMessage));
         }
     }
@@ -668,8 +668,7 @@ class RoomManager {
         const messageInput = document.getElementById('messageInput');
         const content = messageInput.value.trim();
 
-        if (!content) return;
-        if (!this.stompClient || !this.isConnected) return;
+        if (!content || !this.stompClient || !this.isConnected) return;
 
         const message = {
             type: 'CHAT',
@@ -696,14 +695,20 @@ class RoomManager {
         } else {
             const isMyMessage = message.userId === this.currentUser.id;
             messageElement.className += isMyMessage ? ' my-message' : '';
-            messageElement.innerHTML = `
-                <strong>${message.username}:</strong> ${message.content}
-                <small>${new Date(message.timestamp).toLocaleTimeString()}</small>
-            `;
+            messageElement.innerHTML = `<strong>${message.username}:</strong> ${message.content}`;
+
+            // Add animation for new messages
+            messageElement.classList.add('new-message');
         }
 
         chatMessages.appendChild(messageElement);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Auto-scroll to new message
+        if (this.autoScrollChat) {
+            this.scrollChatToBottom();
+        } else {
+            this.updateScrollButton();
+        }
     }
 
     displaySystemMessage(message) {
@@ -719,43 +724,41 @@ class RoomManager {
 
     toggleVideo() {
         if (!this.localStream) return;
-
         const videoTracks = this.localStream.getVideoTracks();
         if (videoTracks.length > 0) {
             this.isVideoEnabled = !this.isVideoEnabled;
-            videoTracks.forEach(track => {
-                track.enabled = this.isVideoEnabled;
-            });
+            videoTracks.forEach(track => track.enabled = this.isVideoEnabled);
 
             const toggleBtn = document.getElementById('toggleVideo');
+            const videoStatus = document.getElementById('videoStatus');
+
             if (this.isVideoEnabled) {
                 toggleBtn.classList.add('video-active');
+                videoStatus.textContent = '📹 Камера: Вкл';
             } else {
                 toggleBtn.classList.remove('video-active');
+                videoStatus.textContent = '📹 Камера: Выкл';
             }
-
-            this.updateMediaStatus();
         }
     }
 
     toggleAudio() {
         if (!this.localStream) return;
-
         const audioTracks = this.localStream.getAudioTracks();
         if (audioTracks.length > 0) {
             this.isAudioEnabled = !this.isAudioEnabled;
-            audioTracks.forEach(track => {
-                track.enabled = this.isAudioEnabled;
-            });
+            audioTracks.forEach(track => track.enabled = this.isAudioEnabled);
 
             const toggleBtn = document.getElementById('toggleAudio');
+            const audioStatus = document.getElementById('audioStatus');
+
             if (this.isAudioEnabled) {
                 toggleBtn.classList.add('audio-active');
+                audioStatus.textContent = '🎤 Микрофон: Вкл';
             } else {
                 toggleBtn.classList.remove('audio-active');
+                audioStatus.textContent = '🎤 Микрофон: Выкл';
             }
-
-            this.updateMediaStatus();
         }
     }
 
@@ -763,9 +766,9 @@ class RoomManager {
         try {
             if (!this.isScreenSharing) {
                 const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true
+                    video: true,
+                    audio: true
                 });
-
                 document.getElementById('localVideo').srcObject = screenStream;
                 this.isScreenSharing = true;
                 document.querySelector('.local-video-container').classList.add('screen-sharing');
@@ -782,9 +785,7 @@ class RoomManager {
     }
 
     stopScreenShare() {
-        if (this.localStream) {
-            document.getElementById('localVideo').srcObject = this.localStream;
-        }
+        document.getElementById('localVideo').srcObject = this.localStream;
         this.isScreenSharing = false;
         document.querySelector('.local-video-container').classList.remove('screen-sharing');
     }
@@ -830,13 +831,17 @@ class RoomManager {
     }
 
     cleanup() {
+        console.log('🧹 Cleaning up resources...');
+
         this.sendLeaveMessage();
 
         if (this.stompClient) {
             this.stompClient.disconnect();
+            console.log('✅ WebSocket disconnected');
         }
 
         this.peerConnections.forEach((connection, userId) => {
+            console.log('🔌 Closing connection with:', userId);
             connection.close();
         });
         this.peerConnections.clear();
@@ -847,8 +852,11 @@ class RoomManager {
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
                 track.stop();
+                console.log('✅ Track stopped:', track.kind);
             });
         }
+
+        console.log('✅ Cleanup completed');
     }
 
     generateUserId() {
@@ -866,12 +874,7 @@ class RoomManager {
         tempMsg.className = 'temp-message';
         tempMsg.textContent = message;
         document.body.appendChild(tempMsg);
-
-        setTimeout(() => {
-            if (tempMsg.parentNode) {
-                tempMsg.parentNode.removeChild(tempMsg);
-            }
-        }, 3000);
+        setTimeout(() => tempMsg.remove(), 3000);
     }
 
     showError(message) {
@@ -879,16 +882,11 @@ class RoomManager {
         errorMsg.className = 'error-message-global';
         errorMsg.textContent = message;
         document.body.appendChild(errorMsg);
-
-        setTimeout(() => {
-            if (errorMsg.parentNode) {
-                errorMsg.parentNode.removeChild(errorMsg);
-            }
-        }, 5000);
+        setTimeout(() => errorMsg.remove(), 5000);
     }
 }
 
-// Автоматическая инициализация
+// Initialize
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Initializing RoomManager...');
     window.roomManager = new RoomManager();
