@@ -1,381 +1,565 @@
-class VideoConference {
+class RoomManager {
     constructor() {
-        this.roomId = window.location.pathname.split('/').pop();
-        this.userId = this.generateUserId();
-        this.username = `User${Math.random().toString(36).substr(2, 5)}`;
-        this.localStream = null;
-        this.screenStream = null;
-        this.peerConnections = {};
         this.stompClient = null;
-        this.participants = [];
-        this.mediaDevices = [];
-        this.currentVideoDevice = null;
-        this.currentAudioDevice = null;
-        this.audioContext = null;
-        this.analyser = null;
-        this.isInitialized = false;
+        this.currentUser = {
+            id: this.generateUserId(),
+            username: 'User_' + Math.random().toString(36).substr(2, 5)
+        };
+        this.currentRoomId = this.getRoomIdFromUrl();
+        this.participants = new Map();
+        this.isConnected = false;
+        this.localStream = null;
+        this.remoteStreams = new Map();
+        this.isVideoEnabled = true;
+        this.isAudioEnabled = true;
         this.isScreenSharing = false;
-        this.inviteCode = null;
+        this.roomName = 'Комната видеоконференции';
+        this.inviteCode = '';
 
-        this.initialize();
+        this.initializeEventListeners();
     }
 
-    async initialize() {
-        await this.setupEventListeners();
-        await this.initializeWebSocket();
-        await this.loadRoomInfo();
-        this.showPermissionModal();
-    }
+    // Инициализация обработчиков событий
+    initializeEventListeners() {
+        // Кнопки управления
+        document.getElementById('toggleVideo').addEventListener('click', () => this.toggleVideo());
+        document.getElementById('toggleAudio').addEventListener('click', () => this.toggleAudio());
+        document.getElementById('screenShare').addEventListener('click', () => this.toggleScreenShare());
+        document.getElementById('settingsBtn').addEventListener('click', () => this.showSettings());
+        document.getElementById('leaveBtn').addEventListener('click', () => this.leaveRoom());
+        document.getElementById('inviteBtn').addEventListener('click', () => this.showInviteModal());
 
-    async loadRoomInfo() {
-        try {
-            const response = await fetch(`/api/rooms/${this.roomId}`);
-            if (response.ok) {
-                const room = await response.json();
-                document.getElementById('roomName').textContent = room.name || 'Комната ' + this.roomId;
-                this.inviteCode = room.inviteCode;
-
-                const codeDisplay = document.getElementById('inviteCodeDisplay');
-                if (codeDisplay && this.inviteCode) {
-                    codeDisplay.textContent = this.inviteCode;
-                }
-            } else {
-                document.getElementById('roomName').textContent = 'Комната ' + this.roomId;
-            }
-        } catch (error) {
-            console.error('Error fetching room info:', error);
-            document.getElementById('roomName').textContent = 'Комната ' + this.roomId;
-        }
-    }
-
-    showPermissionModal() {
-        const modal = document.getElementById('permissionModal');
-        modal.style.display = 'block';
-
-        document.getElementById('startMedia').addEventListener('click', async () => {
-            modal.style.display = 'none';
-            await this.initializeMedia();
+        // Чат
+        document.getElementById('sendMessage').addEventListener('click', () => this.sendChatMessage());
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.sendChatMessage();
         });
+
+        // Модальные окна
+        document.getElementById('startMedia').addEventListener('click', () => this.startMedia());
+        document.getElementById('cancelJoin').addEventListener('click', () => this.cancelJoin());
+        document.getElementById('applySettings').addEventListener('click', () => this.applySettings());
+
+        // Копирование ссылки и кода
+        document.getElementById('copyLink').addEventListener('click', () => this.copyToClipboard('inviteLink'));
+        document.getElementById('copyCode').addEventListener('click', () => this.copyToClipboard('inviteCodeDisplay'));
+
+        // Закрытие модальных окон
+        document.querySelectorAll('.close').forEach(closeBtn => {
+            closeBtn.addEventListener('click', (e) => {
+                e.target.closest('.modal').style.display = 'none';
+            });
+        });
+
+        // Закрытие модальных окон по клику вне области
+        window.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.style.display = 'none';
+            }
+        });
+
+        // Обработка закрытия страницы
+        window.addEventListener('beforeunload', () => this.sendLeaveMessage());
+        window.addEventListener('pagehide', () => this.sendLeaveMessage());
     }
 
-    async initializeMedia() {
+    // Запуск медиа устройств
+    async startMedia() {
         try {
-            await this.requestPermissions();
-            await this.getMediaDevices();
-            await this.startCameraAndMicrophone();
-
-            this.isInitialized = true;
-            this.updateRoomInfo();
-
+            document.getElementById('permissionModal').style.display = 'none';
+            await this.setupMediaDevices();
+            this.connectWebSocket();
+            this.loadRoomInfo();
         } catch (error) {
-            console.error('Error initializing media:', error);
-            this.showMediaError('Не удалось инициализировать медиа устройства: ' + error.message);
+            console.error('Error starting media:', error);
+            this.showError('Не удалось получить доступ к камере и микрофону');
+            document.getElementById('permissionModal').style.display = 'block';
         }
     }
 
-    async requestPermissions() {
+    // Отмена присоединения
+    cancelJoin() {
+        window.location.href = '/';
+    }
+
+    // Настройка медиа устройств
+    async setupMediaDevices() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            this.localStream = await navigator.mediaDevices.getUserMedia({
                 video: true,
                 audio: true
             });
-            stream.getTracks().forEach(track => track.stop());
+
+            const localVideo = document.getElementById('localVideo');
+            localVideo.srcObject = this.localStream;
+
+            // Обновляем доступные устройства
+            await this.updateDeviceLists();
+
+            this.showTempMessage('✅ Камера и микрофон подключены');
         } catch (error) {
-            if (error.name === 'NotAllowedError') {
-                throw new Error('Доступ к камере или микрофону запрещен. Пожалуйста, разрешите доступ и обновите страницу.');
-            } else if (error.name === 'NotFoundError') {
-                throw new Error('Камера или микрофон не найдены. Проверьте подключение устройств.');
-            } else if (error.name === 'NotReadableError') {
-                throw new Error('Не удалось получить доступ к камере или микрофону. Возможно, они используются другим приложением.');
-            } else {
-                throw error;
-            }
+            console.error('Error accessing media devices:', error);
+            throw error;
         }
     }
 
-    async getMediaDevices() {
+    // Обновление списка устройств
+    async updateDeviceLists() {
         try {
             const devices = await navigator.mediaDevices.enumerateDevices();
-            this.mediaDevices = devices;
-            this.populateDeviceSelectors();
+
+            const videoSelect = document.getElementById('videoSource');
+            const audioSelect = document.getElementById('audioSource');
+            const audioOutputSelect = document.getElementById('audioOutput');
+
+            // Очищаем списки
+            videoSelect.innerHTML = '<option value="">📹 Выберите камеру</option>';
+            audioSelect.innerHTML = '<option value="">🎤 Выберите микрофон</option>';
+            audioOutputSelect.innerHTML = '<option value="">🔊 Выберите динамики</option>';
+
+            devices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `Unknown ${device.kind}`;
+
+                if (device.kind === 'videoinput') {
+                    videoSelect.appendChild(option);
+                } else if (device.kind === 'audioinput') {
+                    audioSelect.appendChild(option);
+                } else if (device.kind === 'audiooutput') {
+                    audioOutputSelect.appendChild(option);
+                }
+            });
         } catch (error) {
             console.error('Error enumerating devices:', error);
         }
     }
 
-    populateDeviceSelectors() {
-        const videoSelect = document.getElementById('videoSource');
-        const audioSelect = document.getElementById('audioSource');
-        const outputSelect = document.getElementById('audioOutput');
-
-        videoSelect.innerHTML = '<option value="">Выберите камеру</option>';
-        audioSelect.innerHTML = '<option value="">Выберите микрофон</option>';
-        outputSelect.innerHTML = '<option value="">Выберите динамики</option>';
-
-        this.mediaDevices
-            .filter(device => device.kind === 'videoinput')
-            .forEach(device => {
-                const option = document.createElement('option');
-                option.value = device.deviceId;
-                option.textContent = device.label || `Камера ${videoSelect.options.length}`;
-                videoSelect.appendChild(option);
-            });
-
-        this.mediaDevices
-            .filter(device => device.kind === 'audioinput')
-            .forEach(device => {
-                const option = document.createElement('option');
-                option.value = device.deviceId;
-                option.textContent = device.label || `Микрофон ${audioSelect.options.length}`;
-                audioSelect.appendChild(option);
-            });
-
-        this.mediaDevices
-            .filter(device => device.kind === 'audiooutput')
-            .forEach(device => {
-                const option = document.createElement('option');
-                option.value = device.deviceId;
-                option.textContent = device.label || `Динамики ${outputSelect.options.length}`;
-                outputSelect.appendChild(option);
-            });
-    }
-
-    async startCameraAndMicrophone(constraints = null) {
-        try {
-            if (this.localStream) {
-                this.localStream.getTracks().forEach(track => track.stop());
-            }
-
-            const defaultConstraints = {
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    frameRate: { ideal: 30 },
-                    facingMode: 'user'
-                },
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                    channelCount: 1,
-                    sampleRate: 44100,
-                    sampleSize: 16
-                }
-            };
-
-            const finalConstraints = constraints || defaultConstraints;
-
-            this.localStream = await navigator.mediaDevices.getUserMedia(finalConstraints);
-
-            const videoTrack = this.localStream.getVideoTracks()[0];
-            const audioTrack = this.localStream.getAudioTracks()[0];
-
-            if (videoTrack) {
-                this.currentVideoDevice = videoTrack.getSettings().deviceId;
-                document.getElementById('videoSource').value = this.currentVideoDevice;
-            }
-
-            if (audioTrack) {
-                this.currentAudioDevice = audioTrack.getSettings().deviceId;
-                document.getElementById('audioSource').value = this.currentAudioDevice;
-            }
-
-            const localVideo = document.getElementById('localVideo');
-            localVideo.srcObject = this.localStream;
-
-            this.startAudioMonitoring();
-            this.updateMediaStatus();
-
-            console.log('Camera and microphone started successfully');
-
-        } catch (error) {
-            console.error('Error starting camera and microphone:', error);
-            this.showMediaError('Ошибка при запуске камеры или микрофона: ' + error.message);
-            this.createLocalVideoPlaceholder();
-        }
-    }
-
-    startAudioMonitoring() {
-        if (!this.audioContext) {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-
-        if (this.analyser) {
-            this.analyser.disconnect();
-        }
-
-        const source = this.audioContext.createMediaStreamSource(this.localStream);
-        this.analyser = this.audioContext.createAnalyser();
-        this.analyser.fftSize = 256;
-        source.connect(this.analyser);
-
-        this.updateVolumeMeter();
-    }
-
-    updateVolumeMeter() {
-        if (!this.analyser) return;
-
-        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-        this.analyser.getByteFrequencyData(dataArray);
-
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
-        }
-        const average = sum / dataArray.length;
-        const volume = Math.min(average / 128, 1);
-
-        const volumeLevel = document.querySelector('.volume-level');
-        if (volumeLevel) {
-            volumeLevel.style.width = (volume * 100) + '%';
-        }
-
-        requestAnimationFrame(() => this.updateVolumeMeter());
-    }
-
-    updateMediaStatus() {
-        const videoStatus = document.getElementById('videoStatus');
-        const audioStatus = document.getElementById('audioStatus');
-
-        if (this.localStream) {
-            const videoTrack = this.localStream.getVideoTracks()[0];
-            const audioTrack = this.localStream.getAudioTracks()[0];
-
-            if (videoTrack) {
-                const statusText = this.isScreenSharing ? 'Демонстрация экрана' : (videoTrack.enabled ? 'Камера: Вкл' : 'Камера: Выкл');
-                videoStatus.textContent = statusText;
-                videoStatus.className = videoTrack.enabled ? '' : 'muted';
-            }
-
-            if (audioTrack) {
-                audioStatus.textContent = audioTrack.enabled ? 'Микрофон: Вкл' : 'Микрофон: Выкл';
-                audioStatus.className = audioTrack.enabled ? '' : 'muted';
-            }
-        }
-    }
-
-    async setupEventListeners() {
-        // Управление медиа
-        document.getElementById('toggleVideo').addEventListener('click', () => this.toggleVideo());
-        document.getElementById('toggleAudio').addEventListener('click', () => this.toggleAudio());
-        document.getElementById('screenShare').addEventListener('click', () => this.toggleScreenShare());
-        document.getElementById('settingsBtn').addEventListener('click', () => this.showSettingsModal());
-
-        // Чат
-        document.getElementById('sendMessage').addEventListener('click', () => this.sendMessage());
-        document.getElementById('messageInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.sendMessage();
-        });
-
-        // Управление комнатой
-        document.getElementById('leaveBtn').addEventListener('click', () => this.leaveRoom());
-        document.getElementById('inviteBtn').addEventListener('click', () => this.showInviteModal());
-
-        // Настройки
-        document.getElementById('applySettings').addEventListener('click', () => this.applySettings());
-
-        // Модальные окна
-        this.setupModalListeners();
-
-        // Обработка закрытия страницы
-        window.addEventListener('beforeunload', () => this.leaveRoom());
-
-        // Обновление списка устройств
-        navigator.mediaDevices.addEventListener('devicechange', () => {
-            this.getMediaDevices();
-        });
-    }
-
-    setupModalListeners() {
-        const modals = document.querySelectorAll('.modal');
-
-        modals.forEach(modal => {
-            const closeBtn = modal.querySelector('.close');
-            if (closeBtn) {
-                closeBtn.addEventListener('click', () => {
-                    modal.style.display = 'none';
-                });
-            }
-        });
-
-        window.addEventListener('click', (e) => {
-            modals.forEach(modal => {
-                if (e.target === modal) {
-                    modal.style.display = 'none';
-                }
-            });
-        });
-    }
-
-    initializeWebSocket() {
+    // Подключение к WebSocket
+    connectWebSocket() {
         const socket = new SockJS('/ws');
         this.stompClient = Stomp.over(socket);
 
         this.stompClient.connect({}, (frame) => {
             console.log('Connected: ' + frame);
+            this.isConnected = true;
 
-            this.stompClient.subscribe(`/user/queue/webrtc`, (message) => {
-                this.handleWebRTCMessage(JSON.parse(message.body));
-            });
+            // Подписываемся на топики
+            this.subscribeToTopics();
 
-            this.stompClient.subscribe(`/topic/room/${this.roomId}/chat`, (message) => {
-                this.handleChatMessage(JSON.parse(message.body));
-            });
+            // Отправляем сообщение о присоединении
+            this.sendJoinMessage();
 
-            this.stompClient.subscribe(`/topic/room/${this.roomId}/participants`, (message) => {
-                this.handleParticipantsUpdate(JSON.parse(message.body));
-            });
-
-            if (this.isInitialized) {
-                this.joinRoom();
-            }
+            // Запрашиваем текущий статус комнаты
+            this.requestRoomStatus();
 
         }, (error) => {
             console.error('WebSocket connection error:', error);
-            this.showError('Ошибка подключения к серверу');
+            this.showError('Ошибка подключения к комнате');
+            setTimeout(() => this.connectWebSocket(), 5000);
         });
     }
 
+    // Подписка на топики
+    subscribeToTopics() {
+        // Топик участников
+        this.stompClient.subscribe('/topic/room/' + this.currentRoomId + '/participants',
+            (message) => {
+                console.log('Received participants message:', message);
+                this.handleParticipantsMessage(JSON.parse(message.body));
+            });
+
+        // Топик чата
+        this.stompClient.subscribe('/topic/room/' + this.currentRoomId + '/chat',
+            (message) => {
+                console.log('Received chat message:', message);
+                this.handleChatMessage(JSON.parse(message.body));
+            });
+
+        // Персональная очередь для WebRTC
+        this.stompClient.subscribe('/user/queue/webrtc',
+            (message) => {
+                console.log('Received WebRTC message:', message);
+                this.handleWebRTCMessage(JSON.parse(message.body));
+            });
+
+        // Персональная очередь для статуса комнаты
+        this.stompClient.subscribe('/user/queue/room-status',
+            (message) => {
+                console.log('Received room status:', message);
+                this.handleRoomStatus(JSON.parse(message.body));
+            });
+    }
+
+    // Обработка сообщений участников
+    handleParticipantsMessage(message) {
+        console.log('Participants message:', message);
+
+        switch (message.type) {
+            case 'USER_JOINED':
+                // Добавляем участника (сервер уже отфильтровал текущего пользователя)
+                this.addParticipant(message.userId, message.username);
+                this.updateParticipantCount(message.participantCount);
+                this.displaySystemMessage(message.username + ' присоединился к конференции');
+                break;
+
+            case 'USER_LEFT':
+                // Удаляем участника (сервер уже отфильтровал текущего пользователя)
+                this.removeParticipant(message.userId);
+                this.updateParticipantCount(message.participantCount);
+                if (message.username) {
+                    this.displaySystemMessage(message.username + ' покинул конференцию');
+                }
+                break;
+
+            case 'ROOM_STATUS':
+                this.updateRoomStatus(message);
+                break;
+        }
+
+        // Обновляем список участников если он есть в сообщении
+        if (message.participants) {
+            this.updateParticipantsList(message.participants);
+        }
+    }
+
+    // Обработка сообщений чата
+    handleChatMessage(message) {
+        console.log('Chat message received:', message);
+        this.displayChatMessage(message);
+    }
+
+    // Обработка WebRTC сообщений
+    handleWebRTCMessage(message) {
+        console.log('WebRTC message:', message);
+        // Здесь будет логика обработки WebRTC сообщений
+    }
+
+    // Обработка статуса комнаты
+    handleRoomStatus(message) {
+        console.log('Room status:', message);
+        this.updateRoomStatus(message);
+    }
+
+    // Добавление участника
+    addParticipant(userId, username) {
+        // Просто добавляем участника (сервер гарантирует что это не текущий пользователь)
+        if (!this.participants.has(userId)) {
+            this.participants.set(userId, {
+                id: userId,
+                username: username,
+                joinedAt: new Date(),
+                status: 'connected'
+            });
+
+            this.updateParticipantsList();
+            this.createRemoteVideoElement(userId, username);
+        }
+    }
+
+    // Удаление участника
+    removeParticipant(userId) {
+        if (this.participants.has(userId)) {
+            this.participants.delete(userId);
+            this.updateParticipantsList();
+            this.removeRemoteVideoElement(userId);
+        }
+    }
+
+    // Обновление счетчика участников
+    updateParticipantCount(count) {
+        const countElement = document.getElementById('participantsCount');
+        const headerCountElement = document.getElementById('participantsCountHeader');
+
+        if (countElement) countElement.textContent = count;
+        if (headerCountElement) headerCountElement.textContent = count;
+
+        // Обновляем заголовок комнаты
+        const roomNameElement = document.getElementById('roomName');
+        if (roomNameElement) {
+            roomNameElement.textContent = `${this.roomName} (${count} участников)`;
+        }
+    }
+
+    // Обновление списка участников в UI
+    updateParticipantsList(participantsData = null) {
+        const participantsList = document.getElementById('participantsList');
+        if (!participantsList) return;
+
+        participantsList.innerHTML = '';
+
+        // Всегда добавляем текущего пользователя первым
+        const currentUserElement = this.createParticipantElement(this.currentUser, true);
+        participantsList.appendChild(currentUserElement);
+
+        // Используем переданные данные или текущих участников
+        const participantsToShow = participantsData || Array.from(this.participants.values());
+
+        // Добавляем остальных участников
+        participantsToShow.forEach(participant => {
+            const participantElement = this.createParticipantElement(participant, false);
+            participantsList.appendChild(participantElement);
+        });
+    }
+
+    // Создание элемента участника
+    createParticipantElement(participant, isCurrentUser) {
+        const div = document.createElement('div');
+        div.className = `participant ${isCurrentUser ? 'current-user' : ''}`;
+        div.innerHTML = `
+            <span class="username">${participant.username}${isCurrentUser ? ' (Вы)' : ''}</span>
+            <span class="status ${participant.status}">
+                ${participant.status === 'connected' ? '🟢' : '🔴'}
+            </span>
+        `;
+        return div;
+    }
+
+    // Создание элемента удаленного видео
+    createRemoteVideoElement(userId, username) {
+        const videoGrid = document.getElementById('videoGrid');
+        const placeholder = videoGrid.querySelector('.video-placeholder');
+
+        if (placeholder) {
+            placeholder.remove();
+        }
+
+        // Проверяем, нет ли уже такого видео элемента
+        if (!document.getElementById(`remote-video-${userId}`)) {
+            const videoContainer = document.createElement('div');
+            videoContainer.className = 'remote-video';
+            videoContainer.id = `remote-video-${userId}`;
+
+            videoContainer.innerHTML = `
+                <video id="video-${userId}" autoplay playsinline></video>
+                <div class="participant-info">
+                    ${username}
+                </div>
+            `;
+
+            videoGrid.appendChild(videoContainer);
+        }
+    }
+
+    // Удаление элемента удаленного видео
+    removeRemoteVideoElement(userId) {
+        const videoElement = document.getElementById(`remote-video-${userId}`);
+        if (videoElement) {
+            videoElement.remove();
+        }
+
+        // Показываем placeholder если не осталось участников
+        const videoGrid = document.getElementById('videoGrid');
+        if (videoGrid.children.length === 0) {
+            videoGrid.innerHTML = `
+                <div class="video-placeholder">
+                    <div class="placeholder-icon">👥</div>
+                    <div class="placeholder-text">Участники появятся здесь</div>
+                </div>
+            `;
+        }
+    }
+
+    // Отправка сообщения о присоединении
+    sendJoinMessage() {
+        if (this.stompClient && this.isConnected) {
+            const joinMessage = {
+                roomId: this.currentRoomId,
+                userId: this.currentUser.id,
+                username: this.currentUser.username,
+                timestamp: new Date().toISOString()
+            };
+
+            console.log('Sending join message:', joinMessage);
+            this.stompClient.send("/app/room.join", {}, JSON.stringify(joinMessage));
+        }
+    }
+
+    // Отправка сообщения о выходе
+    sendLeaveMessage() {
+        if (this.stompClient && this.isConnected) {
+            const leaveMessage = {
+                roomId: this.currentRoomId,
+                userId: this.currentUser.id,
+                username: this.currentUser.username,
+                timestamp: new Date().toISOString()
+            };
+
+            console.log('Sending leave message:', leaveMessage);
+            this.stompClient.send("/app/room.leave", {}, JSON.stringify(leaveMessage));
+        }
+    }
+
+    // Запрос статуса комнаты
+    requestRoomStatus() {
+        if (this.stompClient && this.isConnected) {
+            const statusMessage = {
+                roomId: this.currentRoomId,
+                userId: this.currentUser.id,
+                timestamp: new Date().toISOString()
+            };
+
+            console.log('Requesting room status:', statusMessage);
+            this.stompClient.send("/app/room.status", {}, JSON.stringify(statusMessage));
+        }
+    }
+
+    // Обновление статуса комнаты
+    updateRoomStatus(status) {
+        this.updateParticipantCount(status.participantCount);
+        if (status.participants) {
+            this.updateParticipantsList(status.participants);
+        }
+    }
+
+    // Отправка сообщения в чат
+    sendChatMessage() {
+        const messageInput = document.getElementById('messageInput');
+        const content = messageInput.value.trim();
+
+        if (!content) {
+            this.showError('Введите сообщение');
+            return;
+        }
+
+        if (!this.stompClient || !this.isConnected) {
+            this.showError('Нет подключения к серверу');
+            return;
+        }
+
+        const message = {
+            type: 'CHAT',
+            roomId: this.currentRoomId,
+            userId: this.currentUser.id,
+            username: this.currentUser.username,
+            content: content,
+            timestamp: new Date().toISOString()
+        };
+
+        console.log('Sending chat message:', message);
+
+        // НЕМЕДЛЕННО отображаем сообщение локально
+        this.displayChatMessage(message);
+
+        // Затем отправляем на сервер
+        this.stompClient.send("/app/chat.send", {}, JSON.stringify(message));
+        messageInput.value = '';
+    }
+
+    // Отображение сообщения в чате
+    displayChatMessage(message) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (!chatMessages) return;
+
+        const messageElement = document.createElement('div');
+        messageElement.className = `chat-message ${message.type === 'SYSTEM' ? 'system-message' : ''}`;
+
+        if (message.type === 'SYSTEM') {
+            messageElement.innerHTML = `
+                <em>${message.content}</em>
+                <small>${this.formatTime(message.timestamp)}</small>
+            `;
+        } else {
+            // Проверяем, наше ли это сообщение
+            const isMyMessage = message.userId === this.currentUser.id;
+            if (isMyMessage) {
+                messageElement.classList.add('my-message');
+            }
+
+            messageElement.innerHTML = `
+                <strong>${message.username}:</strong> ${message.content}
+                <small>${this.formatTime(message.timestamp)}</small>
+            `;
+        }
+
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Отображение системного сообщения
+    displaySystemMessage(message) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            const messageElement = document.createElement('div');
+            messageElement.className = 'chat-message system-message';
+            messageElement.innerHTML = `
+                <em>${message}</em>
+                <small>${this.formatTime(new Date().toISOString())}</small>
+            `;
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+
+    // Управление видео
+    toggleVideo() {
+        if (!this.localStream) return;
+
+        const videoTracks = this.localStream.getVideoTracks();
+        if (videoTracks.length > 0) {
+            this.isVideoEnabled = !this.isVideoEnabled;
+            videoTracks.forEach(track => {
+                track.enabled = this.isVideoEnabled;
+            });
+
+            const toggleBtn = document.getElementById('toggleVideo');
+            const videoStatus = document.getElementById('videoStatus');
+
+            if (this.isVideoEnabled) {
+                toggleBtn.classList.add('video-active');
+                videoStatus.textContent = '📹 Камера: Вкл';
+                videoStatus.classList.remove('muted');
+            } else {
+                toggleBtn.classList.remove('video-active');
+                videoStatus.textContent = '📹 Камера: Выкл';
+                videoStatus.classList.add('muted');
+            }
+        }
+    }
+
+    // Управление аудио
+    toggleAudio() {
+        if (!this.localStream) return;
+
+        const audioTracks = this.localStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+            this.isAudioEnabled = !this.isAudioEnabled;
+            audioTracks.forEach(track => {
+                track.enabled = this.isAudioEnabled;
+            });
+
+            const toggleBtn = document.getElementById('toggleAudio');
+            const audioStatus = document.getElementById('audioStatus');
+
+            if (this.isAudioEnabled) {
+                toggleBtn.classList.add('audio-active');
+                audioStatus.textContent = '🎤 Микрофон: Вкл';
+                audioStatus.classList.remove('muted');
+            } else {
+                toggleBtn.classList.remove('audio-active');
+                audioStatus.textContent = '🎤 Микрофон: Выкл';
+                audioStatus.classList.add('muted');
+            }
+        }
+    }
+
+    // Демонстрация экрана
     async toggleScreenShare() {
         try {
             if (!this.isScreenSharing) {
-                // Начинаем демонстрацию экрана
-                this.screenStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: {
-                        cursor: 'always',
-                        displaySurface: 'monitor'
-                    },
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        sampleRate: 44100
-                    }
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: true
                 });
 
-                // Останавливаем камеру
-                if (this.localStream) {
-                    const videoTrack = this.localStream.getVideoTracks()[0];
-                    if (videoTrack) {
-                        videoTrack.stop();
-                    }
-                }
-
-                // Заменяем видео на демонстрацию экрана
                 const localVideo = document.getElementById('localVideo');
-                localVideo.srcObject = this.screenStream;
+                localVideo.srcObject = screenStream;
 
                 this.isScreenSharing = true;
+                document.querySelector('.local-video-container').classList.add('screen-sharing');
 
-                // Обновляем UI
-                document.getElementById('screenShare').textContent = '🖥️🔴';
-                document.getElementById('screenShare').style.background = 'var(--error)';
-                document.getElementById('toggleVideo').style.display = 'none';
-
-                this.addSystemMessage(`${this.username} начал(а) демонстрацию экрана`);
-                this.updateMediaStatus();
-
-                // Обработка остановки демонстрации
-                this.screenStream.getTracks().forEach(track => {
+                // Обработка завершения демонстрации экрана
+                screenStream.getTracks().forEach(track => {
                     track.onended = () => {
                         this.stopScreenShare();
                     };
@@ -386,391 +570,150 @@ class VideoConference {
             }
         } catch (error) {
             console.error('Error sharing screen:', error);
-            if (error.name !== 'NotAllowedError') {
-                this.showError('Ошибка при демонстрации экрана: ' + error.message);
-            }
+            this.showError('Не удалось начать демонстрацию экрана');
         }
     }
 
+    // Остановка демонстрации экрана
     stopScreenShare() {
-        if (this.screenStream) {
-            this.screenStream.getTracks().forEach(track => track.stop());
-            this.screenStream = null;
-        }
-
+        const localVideo = document.getElementById('localVideo');
+        localVideo.srcObject = this.localStream;
         this.isScreenSharing = false;
-
-        // Восстанавливаем камеру
-        if (this.localStream) {
-            const localVideo = document.getElementById('localVideo');
-            localVideo.srcObject = this.localStream;
-
-            // Включаем видео если оно было включено до демонстрации
-            const videoTrack = this.localStream.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = true;
-            }
-        }
-
-        // Обновляем UI
-        document.getElementById('screenShare').textContent = '🖥️';
-        document.getElementById('screenShare').style.background = '';
-        document.getElementById('toggleVideo').style.display = 'flex';
-
-        this.addSystemMessage(`${this.username} остановил(а) демонстрацию экрана`);
-        this.updateMediaStatus();
+        document.querySelector('.local-video-container').classList.remove('screen-sharing');
     }
 
-    toggleVideo() {
-        if (this.isScreenSharing) {
-            this.showError('Невозможно управлять камерой во время демонстрации экрана');
-            return;
-        }
+    // Показать модальное окно приглашения
+    async showInviteModal() {
+        await this.loadRoomInfo();
+        const modal = document.getElementById('inviteModal');
+        modal.style.display = 'block';
+    }
 
-        if (this.localStream) {
-            const videoTrack = this.localStream.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = !videoTrack.enabled;
-                const btn = document.getElementById('toggleVideo');
-                btn.classList.toggle('video-active', videoTrack.enabled);
-                btn.textContent = videoTrack.enabled ? '🎥' : '🎥❌';
-                this.updateMediaStatus();
+    // Загрузка информации о комнате
+    async loadRoomInfo() {
+        try {
+            const response = await fetch(`/api/rooms/${this.currentRoomId}`);
+            if (response.ok) {
+                const roomInfo = await response.json();
+                this.roomName = roomInfo.name;
+                this.inviteCode = roomInfo.inviteCode;
 
-                if (!videoTrack.enabled) {
-                    this.addSystemMessage(`${this.username} выключил(а) видео`);
-                } else {
-                    this.addSystemMessage(`${this.username} включил(а) видео`);
-                }
+                // Обновляем UI
+                document.getElementById('roomName').textContent =
+                    `${this.roomName} (${this.participants.size + 1} участников)`;
+                document.getElementById('inviteLink').value =
+                    `${window.location.origin}/room/${this.currentRoomId}`;
+                document.getElementById('inviteCodeDisplay').textContent = this.inviteCode;
             }
+        } catch (error) {
+            console.error('Error loading room info:', error);
         }
     }
 
-    toggleAudio() {
-        if (this.localStream) {
-            const audioTrack = this.localStream.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.enabled = !audioTrack.enabled;
-                const btn = document.getElementById('toggleAudio');
-                btn.classList.toggle('audio-active', audioTrack.enabled);
-                btn.textContent = audioTrack.enabled ? '🎤' : '🎤❌';
-                this.updateMediaStatus();
-
-                if (!audioTrack.enabled) {
-                    this.addSystemMessage(`${this.username} выключил(а) микрофон`);
-                } else {
-                    this.addSystemMessage(`${this.username} включил(а) микрофон`);
-                }
-            }
-        }
-    }
-
-    showSettingsModal() {
+    // Показать настройки
+    showSettings() {
         const modal = document.getElementById('settingsModal');
         modal.style.display = 'block';
     }
 
+    // Применить настройки
     async applySettings() {
-        if (this.isScreenSharing) {
-            this.showError('Невозможно изменить настройки во время демонстрации экрана');
-            return;
-        }
-
         const videoSource = document.getElementById('videoSource').value;
         const audioSource = document.getElementById('audioSource').value;
 
-        const constraints = {
-            video: videoSource ? { deviceId: { exact: videoSource } } : true,
-            audio: audioSource ? { deviceId: { exact: audioSource } } : true
-        };
+        try {
+            const constraints = {
+                video: videoSource ? { deviceId: { exact: videoSource } } : true,
+                audio: audioSource ? { deviceId: { exact: audioSource } } : true
+            };
+
+            const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+            // Останавливаем старый поток
+            if (this.localStream) {
+                this.localStream.getTracks().forEach(track => track.stop());
+            }
+
+            // Устанавливаем новый поток
+            this.localStream = newStream;
+            document.getElementById('localVideo').srcObject = newStream;
+
+            document.getElementById('settingsModal').style.display = 'none';
+            this.showTempMessage('✅ Настройки применены');
+
+        } catch (error) {
+            console.error('Error applying settings:', error);
+            this.showError('Не удалось применить настройки');
+        }
+    }
+
+    // Копирование в буфер обмена
+    async copyToClipboard(elementId) {
+        const element = document.getElementById(elementId);
+        let text = '';
+
+        if (elementId === 'inviteLink') {
+            text = element.value;
+        } else if (elementId === 'inviteCodeDisplay') {
+            text = element.textContent;
+        }
 
         try {
-            await this.startCameraAndMicrophone(constraints);
-            document.getElementById('settingsModal').style.display = 'none';
-            this.showTempMessage('Настройки применены');
+            await navigator.clipboard.writeText(text);
+            this.showTempMessage('✅ Скопировано в буфер обмена');
         } catch (error) {
-            this.showError('Ошибка при применении настроек: ' + error.message);
+            console.error('Error copying to clipboard:', error);
+            // Fallback для старых браузеров
+            element.select();
+            document.execCommand('copy');
+            this.showTempMessage('✅ Скопировано в буфер обмена');
         }
     }
 
-    createLocalVideoPlaceholder() {
-        const localVideoContainer = document.querySelector('.local-video-container');
-        const videoElement = document.getElementById('localVideo');
-
-        if (videoElement) {
-            videoElement.style.display = 'none';
-        }
-
-        const existingPlaceholder = localVideoContainer.querySelector('.video-placeholder');
-        if (existingPlaceholder) {
-            existingPlaceholder.remove();
-        }
-
-        const placeholder = document.createElement('div');
-        placeholder.className = 'video-placeholder';
-        placeholder.innerHTML = `
-            <div class="placeholder-icon">🎥</div>
-            <div class="placeholder-text">Камера не доступна</div>
-            <button onclick="location.reload()" style="margin-top: 10px; padding: 8px 16px; background: var(--primary); color: white; border: none; border-radius: var(--border-radius); cursor: pointer; font-size: 0.875rem;">
-                Попробовать снова
-            </button>
-        `;
-        localVideoContainer.appendChild(placeholder);
-    }
-
-    showMediaError(message) {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'media-error';
-        errorDiv.innerHTML = `
-            <strong>Ошибка медиа устройства:</strong>
-            <p>${message}</p>
-            <div class="permission-guide">
-                <h4>Как разрешить доступ:</h4>
-                <ol>
-                    <li>Нажмите на значок 🔒 в адресной строке</li>
-                    <li>Найдите пункты "Камера" и "Микрофон"</li>
-                    <li>Установите переключатель в положение "Разрешить"</li>
-                    <li>Обновите страницу</li>
-                </ol>
-            </div>
-        `;
-
-        const container = document.querySelector('.video-section');
-        container.insertBefore(errorDiv, container.firstChild);
-    }
-
-    joinRoom() {
-        if (this.stompClient && this.stompClient.connected) {
-            this.stompClient.send(`/app/room/${this.roomId}/join`, {},
-                JSON.stringify({
-                    userId: this.userId,
-                    username: this.username,
-                    action: 'join',
-                    timestamp: new Date().toISOString(),
-                    roomId: this.roomId
-                })
-            );
-
-            this.addSystemMessage(`${this.username} присоединился к комнате`);
-        }
-    }
-
+    // Выход из комнаты
     leaveRoom() {
-        // Останавливаем все медиа потоки
+        if (confirm('Вы уверены, что хотите покинуть комнату?')) {
+            this.sendLeaveMessage();
+
+            if (this.stompClient) {
+                this.stompClient.disconnect();
+            }
+
+            this.stopAllMediaStreams();
+
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 1000);
+        }
+    }
+
+    // Остановка всех медиа потоков
+    stopAllMediaStreams() {
         if (this.localStream) {
             this.localStream.getTracks().forEach(track => track.stop());
         }
-
-        if (this.screenStream) {
-            this.screenStream.getTracks().forEach(track => track.stop());
-        }
-
-        if (this.audioContext) {
-            this.audioContext.close();
-        }
-
-        // Закрываем все peer соединения
-        Object.values(this.peerConnections).forEach(pc => {
-            if (pc && pc.close) pc.close();
+        this.remoteStreams.forEach(stream => {
+            stream.getTracks().forEach(track => track.stop());
         });
-
-        // Отправляем сообщение о выходе
-        if (this.stompClient && this.stompClient.connected) {
-            this.stompClient.send(`/app/room/${this.roomId}/leave`, {},
-                JSON.stringify({
-                    userId: this.userId,
-                    username: this.username,
-                    action: 'leave',
-                    timestamp: new Date().toISOString(),
-                    roomId: this.roomId
-                })
-            );
-
-            this.stompClient.disconnect();
-        }
-
-        // Перенаправляем на главную страницу
-        setTimeout(() => {
-            window.location.href = '/';
-        }, 100);
     }
 
-    sendMessage() {
-        const input = document.getElementById('messageInput');
-        const content = input.value.trim();
-
-        if (content && this.stompClient && this.stompClient.connected) {
-            this.stompClient.send(`/app/room/${this.roomId}/chat`, {},
-                JSON.stringify({
-                    userId: this.userId,
-                    username: this.username,
-                    content: content,
-                    timestamp: new Date().toISOString(),
-                    type: 'TEXT',
-                    roomId: this.roomId
-                })
-            );
-            input.value = '';
-        }
-    }
-
-    handleChatMessage(message) {
-        const chatMessages = document.getElementById('chatMessages');
-        const messageElement = document.createElement('div');
-
-        if (message.type === 'SYSTEM') {
-            messageElement.className = 'chat-message system-message';
-            messageElement.innerHTML = `
-                <em>${message.content}</em>
-                <small>${new Date(message.timestamp).toLocaleTimeString()}</small>
-            `;
-        } else {
-            messageElement.className = 'chat-message';
-            messageElement.innerHTML = `
-                <strong>${message.username}:</strong>
-                <span>${message.content}</span>
-                <small>${new Date(message.timestamp).toLocaleTimeString()}</small>
-            `;
-        }
-
-        chatMessages.appendChild(messageElement);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
-    addSystemMessage(content) {
-        const chatMessages = document.getElementById('chatMessages');
-        const messageElement = document.createElement('div');
-        messageElement.className = 'chat-message system-message';
-        messageElement.innerHTML = `
-            <em>${content}</em>
-            <small>${new Date().toLocaleTimeString()}</small>
-        `;
-        chatMessages.appendChild(messageElement);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
-    handleParticipantsUpdate(message) {
-        if (message.action === 'join') {
-            const existingIndex = this.participants.findIndex(p => p.userId === message.userId);
-            if (existingIndex === -1) {
-                this.participants.push({
-                    userId: message.userId,
-                    username: message.username,
-                    connected: true,
-                    joinedAt: message.timestamp
-                });
-                if (message.userId !== this.userId) {
-                    this.addSystemMessage(`${message.username} присоединился к комнате`);
-                }
-            }
-        } else if (message.action === 'leave') {
-            const participantIndex = this.participants.findIndex(p => p.userId === message.userId);
-            if (participantIndex !== -1) {
-                const leftParticipant = this.participants[participantIndex];
-                this.participants.splice(participantIndex, 1);
-                if (leftParticipant.userId !== this.userId) {
-                    this.addSystemMessage(`${leftParticipant.username} покинул комнату`);
-                }
-            }
-        }
-
-        this.updateParticipantsUI();
-    }
-
-    updateParticipantsUI() {
-        const participantsList = document.getElementById('participantsList');
-        const participantsCount = document.getElementById('participantsCount');
-
-        participantsList.innerHTML = '';
-
-        const currentUserElement = document.createElement('div');
-        currentUserElement.className = 'participant current-user';
-        currentUserElement.innerHTML = `
-            <span class="username">${this.username} (Вы)</span>
-            <span class="status connected">🟢</span>
-        `;
-        participantsList.appendChild(currentUserElement);
-
-        this.participants.forEach(participant => {
-            const participantElement = document.createElement('div');
-            participantElement.className = 'participant';
-            participantElement.innerHTML = `
-                <span class="username">${participant.username}</span>
-                <span class="status connected">🟢</span>
-            `;
-            participantsList.appendChild(participantElement);
-        });
-
-        participantsCount.textContent = this.participants.length + 1;
-    }
-
-    handleWebRTCMessage(message) {
-        console.log('WebRTC message received:', message);
-    }
-
-    async updateRoomInfo() {
-        try {
-            const response = await fetch(`/api/rooms/${this.roomId}`);
-            if (response.ok) {
-                const room = await response.json();
-                document.getElementById('roomName').textContent = room.name || 'Комната ' + this.roomId;
-            } else {
-                document.getElementById('roomName').textContent = 'Комната ' + this.roomId;
-            }
-        } catch (error) {
-            console.error('Error fetching room info:', error);
-            document.getElementById('roomName').textContent = 'Комната ' + this.roomId;
-        }
-    }
-
+    // Вспомогательные методы
     generateUserId() {
         return 'user_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
     }
 
-    showInviteModal() {
-        document.getElementById('inviteModal').style.display = 'block';
-        document.getElementById('inviteLink').value = window.location.href;
-
-        // Обновляем код приглашения, если он еще не загружен
-        const codeDisplay = document.getElementById('inviteCodeDisplay');
-        if (codeDisplay && this.inviteCode) {
-            codeDisplay.textContent = this.inviteCode;
-        } else if (codeDisplay) {
-            codeDisplay.textContent = 'Загрузка...';
-            // Повторно загружаем информацию о комнате
-            this.loadRoomInfo();
-        }
-
-        // Добавляем обработчики для кнопок копирования
-        document.getElementById('copyLink').addEventListener('click', () => this.copyInviteLink());
-        document.getElementById('copyCode').addEventListener('click', () => this.copyInviteCode());
+    getRoomIdFromUrl() {
+        const path = window.location.pathname;
+        const match = path.match(/\/room\/([^\/]+)/);
+        return match ? match[1] : null;
     }
 
-    copyInviteLink() {
-        const linkInput = document.getElementById('inviteLink');
-        linkInput.select();
-        linkInput.setSelectionRange(0, 99999);
-
-        try {
-            const successful = document.execCommand('copy');
-            if (successful) {
-                this.showTempMessage('Ссылка скопирована в буфер обмена');
-            }
-        } catch (err) {
-            console.error('Failed to copy: ', err);
-        }
-    }
-
-    copyInviteCode() {
-        if (this.inviteCode) {
-            navigator.clipboard.writeText(this.inviteCode).then(() => {
-                this.showTempMessage('Код приглашения скопирован в буфер обмена');
-            }).catch(err => {
-                console.error('Failed to copy code: ', err);
-                this.showError('Не удалось скопировать код');
-            });
-        } else {
-            this.showError('Код приглашения не загружен');
-        }
+    formatTime(timestamp) {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('ru-RU', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     }
 
     showTempMessage(message) {
@@ -778,25 +721,31 @@ class VideoConference {
         tempMsg.className = 'temp-message';
         tempMsg.textContent = message;
         document.body.appendChild(tempMsg);
-        
+
         setTimeout(() => {
-            document.body.removeChild(tempMsg);
+            tempMsg.remove();
         }, 3000);
     }
 
     showError(message) {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message-global';
-        errorDiv.textContent = message;
-        document.body.appendChild(errorDiv);
-        
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'error-message-global';
+        errorMsg.textContent = message;
+        document.body.appendChild(errorMsg);
+
         setTimeout(() => {
-            document.body.removeChild(errorDiv);
+            errorMsg.remove();
         }, 5000);
     }
 }
 
 // Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', () => {
-    new VideoConference();
+document.addEventListener('DOMContentLoaded', function() {
+    window.roomManager = new RoomManager();
+
+    // Обновляем имя пользователя в UI
+    const usernameElement = document.querySelector('.participant.current-user .username');
+    if (usernameElement) {
+        usernameElement.textContent = `Вы (${window.roomManager.currentUser.username})`;
+    }
 });
