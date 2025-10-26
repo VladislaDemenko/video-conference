@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Conference Room</title>
     <link rel="stylesheet" href="/css/room.css">
+    <base href="/">
 </head>
 <body>
 <div class="room-container">
@@ -13,7 +14,7 @@
         <div class="room-info">
             <h2 id="roomName">🎥 Комната видеоконференции</h2>
             <div class="participants-count">
-                <span id="participantsCount">0</span> участников
+                <span id="participantsCount">1</span> участников
             </div>
         </div>
         <div class="room-controls">
@@ -65,7 +66,7 @@
         <div class="sidebar">
             <!-- Participants List -->
             <div class="participants-section">
-                <h3>Участники</h3>
+                <h3>Участники (<span id="participantsCountHeader">1</span>)</h3>
                 <div id="participantsList" class="participants-list">
                     <div class="participant current-user">
                         <span class="username">Вы (Загрузка...)</span>
@@ -84,7 +85,7 @@
                     </div>
                 </div>
                 <div class="chat-input">
-                    <input type="text" id="messageInput" placeholder="Напишите сообщение...">
+                    <input type="text" id="messageInput" placeholder="Напишите сообщение..." maxlength="500">
                     <button id="sendMessage">📤 Отправить</button>
                 </div>
             </div>
@@ -152,7 +153,7 @@
                     <option value="">🎤 Выберите микрофон</option>
                 </select>
                 <div class="volume-meter">
-                    <div class="volume-level"></div>
+                    <div id="volumeLevel" class="volume-level"></div>
                 </div>
             </div>
             <div class="settings-section">
@@ -172,7 +173,7 @@
 </div>
 
 <!-- Permission Modal -->
-<div id="permissionModal" class="modal">
+<div id="permissionModal" class="modal" style="display: block;">
     <div class="modal-content">
         <div class="modal-header">
             <h3>🎥 Добро пожаловать в видеоконференцию!</h3>
@@ -213,7 +214,7 @@
                 <button id="startMedia" class="btn-primary">
                     🎬 Разрешить и начать
                 </button>
-                <button onclick="window.location.href = '/'" class="btn-secondary">
+                <button id="cancelJoin" class="btn-secondary">
                     Отмена
                 </button>
             </div>
@@ -221,8 +222,8 @@
     </div>
 </div>
 
-<script src="/webjars/sockjs-client/sockjs.min.js"></script>
-<script src="/webjars/stomp-websocket/stomp.min.js"></script>
+<script src="/webjars/sockjs-client/1.5.1/sockjs.min.js"></script>
+<script src="/webjars/stomp-websocket/2.3.4/stomp.min.js"></script>
 <script src="/js/room.js"></script>
 </body>
 </html>
